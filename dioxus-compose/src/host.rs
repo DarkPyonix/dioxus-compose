@@ -43,7 +43,19 @@ impl DioxusRuntime {
     /// Renderer would have to report as unknown.
     fn flush_code_edits(&mut self) {
         let renderer = &mut self.renderer;
-        crate::hooks::drain_edits(|request| renderer.apply_editor_request(request));
+        crate::hooks::drain_edits_keeping(|request| {
+            if renderer.editor_node(request.token()).is_some() {
+                renderer.apply_editor_request(request);
+                return true;
+            }
+            // An editor in a widget tree inside an island belongs to that tree's renderer,
+            // which writes the request when the island's page draws, so the request stays
+            // queued and the island draws in this frame. A handle nobody carries is dropped.
+            match crate::html_widget::owner_of_editor(request.token()) {
+                Some(owner) => !crate::html_view::mark_owner_dirty(owner),
+                None => true,
+            }
+        });
     }
 
     fn bind_window_scopes(&mut self) {
@@ -424,7 +436,8 @@ pub(crate) fn deliver_event(
             true,
         )
         .into_any(),
-        EventPayload::EditorFocusChanged { focused } => {
+        EventPayload::EditorFocusChanged { focused }
+        | EventPayload::NativeViewFocus { focused } => {
             Event::new(Rc::new(focused), true).into_any()
         }
         EventPayload::FoldChanged {
@@ -590,9 +603,16 @@ pub(crate) fn deliver_event(
         | EventPayload::StorageLocation(_)
         // The answer to a position query names a request and no handler. The Host hands it
         // to the callback that asked before any runtime sees it.
-        | EventPayload::PositionRect { .. } => {
+        | EventPayload::PositionRect { .. }
+        // A new display density and a native view's parent window are the Host's own: it
+        // takes them before any runtime sees them.
+        | EventPayload::DensityChanged { .. }
+        | EventPayload::NativeViewParent { .. } => {
             return Err(ProtocolError::InvalidValueKind(0));
         }
+        // An event a newer compose-rust added has no listener here yet, so it is
+        // refused like a payload no handler takes rather than reaching one as the wrong type.
+        _ => return Err(ProtocolError::InvalidValueKind(0)),
     };
     let _window_guard = crate::hooks::ActiveWindowGuard::enter(renderer.window_of(node_id));
     let name = if selections { "selectionschange" } else { name };

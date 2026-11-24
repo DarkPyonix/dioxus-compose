@@ -4,9 +4,11 @@
 mod support;
 
 use dioxus_compose::WidgetKind;
-use dioxus_compose::prelude::ReadableExt;
+use dioxus_compose::prelude::{ReadableExt, SyncSignal, WritableExt};
 use dioxus_compose::protocol::Mutation;
 use dioxus_compose_markdown::{MarkdownOptions, MarkdownStream, parse};
+use std::collections::HashSet;
+use std::time::Instant;
 use support::apps::{self, quiet};
 use support::{Screen, corpus, one_shot_dump};
 
@@ -308,4 +310,214 @@ fn fr37_new_blocks_never_disturb_the_ones_above() {
         .find(|node| node.widget == WidgetKind::Text)
         .len();
     assert_eq!(texts, 42);
+}
+
+/// Finished list items and finished table rows freeze while their container is still
+/// growing: deltas to the last item or row touch only that item or row, and streaming cost
+/// on a 300-item list stays bounded relative to a short list.
+#[test]
+fn fr37_c6_finished_list_items_and_table_rows_freeze_on_300_items() {
+    // 1. 300-item list: items 0..299 freeze before the list ends.
+    let mut list_prefix = String::new();
+    for i in 0..299 {
+        list_prefix.push_str(&format!("- item {i}\n"));
+    }
+    let list_open = "- item 299 growing";
+    apps::reset("", quiet());
+    let mut screen = Screen::new(apps::streamed);
+    apps::push(&list_prefix);
+    screen.frame();
+    apps::push(list_open);
+    screen.frame();
+
+    let frozen_item_nodes: HashSet<u32> = (0..299)
+        .map(|i| text_node(&screen, &format!("item {i}")))
+        .collect();
+    let open_item_node = text_node(&screen, "item 299 growing");
+
+    for delta in [" more", " words", " here"] {
+        apps::push(delta);
+        let mutations = screen.frame_with(|_, mutations| format!("{mutations:?}"));
+        let expected = format!(
+            "{:?}",
+            vec![Mutation::AppendText {
+                node_id: open_item_node,
+                text: delta,
+            }]
+        );
+        assert_eq!(
+            mutations, expected,
+            "delta {delta:?} on item 299 should emit only one AppendText"
+        );
+    }
+
+    apps::finish();
+    let touched_on_finish = screen.frame_with(|_, mutations| {
+        mutations
+            .iter()
+            .filter(|mutation| match mutation {
+                Mutation::SetProp { node_id, .. }
+                | Mutation::AppendText { node_id, .. }
+                | Mutation::SetText { node_id, .. }
+                | Mutation::SetModifier { node_id, .. }
+                | Mutation::Remove { node_id }
+                | Mutation::Move { node_id, .. } => frozen_item_nodes.contains(node_id),
+                _ => false,
+            })
+            .count()
+    });
+    assert_eq!(
+        touched_on_finish, 0,
+        "finishing the 300-item list touched frozen list items"
+    );
+    let full_list = format!("{list_prefix}{list_open} more words here");
+    assert_eq!(screen.tree.dump(), one_shot_dump(&full_list, quiet()));
+
+    // 2. 300-row table: header and rows 0..299 freeze before the table ends.
+    let mut table_prefix = String::from("| Key | Value |\n|---|---|\n");
+    for i in 0..299 {
+        table_prefix.push_str(&format!("| row {i} | val {i} |\n"));
+    }
+    let table_open = "| row 299 | growing";
+    apps::reset("", quiet());
+    let mut table_screen = Screen::new(apps::streamed);
+    apps::push(&table_prefix);
+    table_screen.frame();
+    apps::push(table_open);
+    table_screen.frame();
+
+    let mut frozen_table_nodes: HashSet<u32> = HashSet::new();
+    frozen_table_nodes.insert(text_node(&table_screen, "Key"));
+    frozen_table_nodes.insert(text_node(&table_screen, "Value"));
+    for i in 0..299 {
+        frozen_table_nodes.insert(text_node(&table_screen, &format!("row {i}")));
+        frozen_table_nodes.insert(text_node(&table_screen, &format!("val {i}")));
+    }
+    let open_cell_node = text_node(&table_screen, "growing");
+
+    for delta in [" more", " text"] {
+        apps::push(delta);
+        let mutations = table_screen.frame_with(|_, mutations| format!("{mutations:?}"));
+        let expected = format!(
+            "{:?}",
+            vec![Mutation::AppendText {
+                node_id: open_cell_node,
+                text: delta,
+            }]
+        );
+        assert_eq!(
+            mutations, expected,
+            "delta {delta:?} on row 299 should emit only one AppendText"
+        );
+    }
+
+    apps::finish();
+    let touched_table_finish = table_screen.frame_with(|_, mutations| {
+        mutations
+            .iter()
+            .filter(|mutation| match mutation {
+                Mutation::SetProp { node_id, .. }
+                | Mutation::AppendText { node_id, .. }
+                | Mutation::SetText { node_id, .. }
+                | Mutation::SetModifier { node_id, .. }
+                | Mutation::Remove { node_id }
+                | Mutation::Move { node_id, .. } => frozen_table_nodes.contains(node_id),
+                _ => false,
+            })
+            .count()
+    });
+    assert_eq!(
+        touched_table_finish, 0,
+        "finishing the 300-row table touched frozen table rows"
+    );
+    let full_table = format!("{table_prefix}{table_open} more text");
+    assert_eq!(
+        table_screen.tree.dump(),
+        one_shot_dump(&full_table, quiet())
+    );
+
+    // 3. Cost: a delta on item 300 of a list, or on row 300 of a table, costs the Host
+    //    (parse, diff, encode) at most 1.2 times what the same delta costs at the start of
+    //    a short one, at p99. Only the Host's work is timed: the test's own copy of the
+    //    widget tree is not updated inside the timed loop, because copying it costs time
+    //    in proportion to the whole tree and says nothing about the Host.
+    let open_body = format!("- {}", "word ".repeat(200));
+    let open_row = format!("| row x | {} |", "word ".repeat(200));
+    let open_row = &open_row[..open_row.len() - 2];
+    let short_table = "| Key | Value |\n|---|---|\n| row 0 | val 0 |\n";
+
+    assert_delta_cost_bounded("list item 300", "- item 0\n", &list_prefix, &open_body);
+    assert_delta_cost_bounded("table row 300", short_table, &table_prefix, open_row);
+}
+
+/// How much more a delta may cost the Host with a long frozen prefix in the same list or
+/// table than with a short one, at p99.
+const PREFIX_RATIO_CEILING: f64 = 1.2;
+
+/// Streams `prefix` and then `open` into a fresh screen, both as the short and the long
+/// variant, and checks that appending to the open item or row costs the Host at most
+/// [`PREFIX_RATIO_CEILING`] times as much with the long prefix as with the short one.
+///
+/// A ratio of two p99s moves with load on the machine, and load only ever adds time, so
+/// the comparison passes if any one of five attempts meets it. Code that really looks at
+/// the frozen items again is slow on every attempt.
+#[track_caller]
+fn assert_delta_cost_bounded(what: &str, short_prefix: &str, long_prefix: &str, open: &str) {
+    let build = |prefix: &str| {
+        apps::reset("", quiet());
+        let mut screen = Screen::new(apps::streamed);
+        let mut stream = apps::stream();
+        stream.write().push_delta(prefix);
+        screen.frame();
+        stream.write().push_delta(open);
+        screen.frame();
+        for _ in 0..10 {
+            stream.write().push_delta("a ");
+            screen.frame();
+        }
+        (screen, stream)
+    };
+    let delta = |screen: &mut Screen, stream: &mut SyncSignal<MarkdownStream>| {
+        let started = Instant::now();
+        stream.write().push_delta("a ");
+        let batch = screen
+            .host
+            .render_frame(0)
+            .expect("a frame failed to encode");
+        std::hint::black_box(batch.len());
+        started.elapsed().as_nanos()
+    };
+    let p99 = |mut samples: Vec<u128>| -> u128 {
+        samples.sort_unstable();
+        samples[(samples.len() * 99).div_ceil(100) - 1]
+    };
+
+    const ATTEMPTS: usize = 5;
+    const ITERATIONS: usize = 200;
+    let mut failures = Vec::new();
+    for attempt in 1..=ATTEMPTS {
+        let (mut short_screen, mut short_stream) = build(short_prefix);
+        let (mut long_screen, mut long_stream) = build(long_prefix);
+        let mut short_samples = Vec::with_capacity(ITERATIONS);
+        let mut long_samples = Vec::with_capacity(ITERATIONS);
+        for _ in 0..ITERATIONS {
+            short_samples.push(delta(&mut short_screen, &mut short_stream));
+            long_samples.push(delta(&mut long_screen, &mut long_stream));
+        }
+        let short_p99 = p99(short_samples);
+        let long_p99 = p99(long_samples);
+        let ratio = long_p99 as f64 / short_p99.max(1) as f64;
+        if ratio <= PREFIX_RATIO_CEILING {
+            return;
+        }
+        failures.push(format!(
+            "attempt {attempt}: ratio={ratio:.2} (long_p99={long_p99}ns, short_p99={short_p99}ns)"
+        ));
+    }
+    panic!(
+        "a delta on {what} cost more than {PREFIX_RATIO_CEILING} times a delta at the start \
+         of a short one, on all {ATTEMPTS} attempts; the frozen part is being looked at \
+         again:\n{}",
+        failures.join("\n")
+    );
 }

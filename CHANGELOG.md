@@ -2,6 +2,108 @@
 
 ## Unreleased
 
+### HTML: inline `<svg>` is drawn
+
+An `<svg>` written in the page is drawn in its box. Its markup is registered with the
+renderer as an SVG asset, with the SVG namespace added and every `currentColor` written as
+the colour of the element that uses it, so an inline icon follows the colour of its button.
+No `ImageResolver` is involved. At most 256 inline pictures stay registered; past that the
+one drawn longest ago is released.
+
+### rsx: the Switch and Checkbox properties of compose-rust 519ffede
+
+dioxus-compose now pins compose-rust develop at `519ffede`, and the properties it adds can
+be written in `rsx!`.
+
+- `Switch`: `thumb_elevation` in dp, a soft shadow under the thumb, and `track_border`, a
+  `(width, Paint)` line around the track in both states.
+- `Checkbox`: `indeterminate`, the mixed state, which wins over `checked`, and
+  `outline_color`, the box's border in every state.
+
+### HTML: italic labels measured as drawn, and SVG images in currentColor
+### rsx: compose-rust 0.0.11's widgets, properties and modifiers
+
+Everything compose-rust 0.0.11 added to the schema can be written in `rsx!`.
+
+- `NativeView { handle, visible, on_focus_change }`: a place for a platform view the
+  application made, as a `NativeHandle`. The view is handed over as an `AttachNativeView`
+  command when it changes and not on a frame that keeps it, `visible: false` hides it
+  without taking it out of the window, and `on_focus_change` hears it take and lose the
+  keyboard focus. Make the view against `native_view::native_parent`.
+- Six modifiers on every widget: `size_in` (a `SizeIn` with any of `min_width`,
+  `max_width`, `min_height`, `max_height` in dp), `aspect_ratio` with
+  `match_height_constraints_first`, `min_touch_target`, `overlay` (a `Paint`), `sticky`
+  and `unbounded_width`.
+- `TextField`: `placeholder_color` and `caret_color`.
+- `Icon`: `icon_asset`, an SVG drawn in the icon slot and tinted with `color`, in place of
+  `asset_id`. `asset_id` is now optional.
+- `Sheet`: `presentation` (`SheetPresentation::Centered` for a modal in the middle of the
+  window) and `max_width` in dp for a centred sheet.
+- `TopAppBar`: `separator`, whether the design system's hairline is drawn under the bar.
+- `Text`: runs built with `TextSpans::new_with_features` send their OpenType features as
+  `SpanFontFeatures` beside the runs.
+- `CodeEditor`: `content_padding_dp: (top, bottom)` and `content_padding_top_dp`, room
+  above the first line and below the last that scrolls with the text, and
+  `fixed_gutter_columns`, which keeps the fold and change bar columns whether or not the
+  file has any. `CodeEditorColors::current_line_gutter` colours the current line's part of
+  the gutter.
+
+### HTML: italic labels measured as drawn
+
+An italic run of text is measured with the same description of its slant as it is drawn
+with: an upright text style and one italic span over the whole text. The measure request
+used to carry the slant in the text style, which the renderer tracks differently from a
+slanted span, so an italic label could measure narrower than it drew and lose its last
+glyph.
+
+An SVG drawn by an `<img>` takes the element's CSS `color` wherever it says
+`currentColor`, so an icon follows the colour of its button the way it does in a browser.
+`ImageResolver::svg` hands over the SVG's source (it defaults to `None`). The page registers
+it once per colour it is drawn in, with every `currentColor` written as that colour, and a
+change of `color` draws the registration for the new one. One SVG keeps at most 16 colours
+registered: a new colour past that releases the one drawn longest ago (never one the
+current frame draws), so a colour animation does not grow the renderer's cache without
+bound, and a released colour drawn again is registered afresh. An SVG without `currentColor`,
+and an image the resolver gives no source for, is still the asset `resolve` names.
+
+Breaking: `ReplacedImage` has a new public field, `color`, the element's computed `color`,
+so code that builds a `ReplacedImage` with a struct literal must set it. `ImageResolver`
+has a new method, `svg`, with a default that returns `None`, so an existing resolver
+compiles unchanged and keeps drawing what `resolve` names.
+
+### HTML: CSS 3D transforms
+
+A `transform` with a 3D function is drawn. `rotateX`, `rotateY`, `rotate3d`, `translateZ`,
+`translate3d`, `scaleZ`, `scale3d`, `perspective()` and `matrix3d()`, the `rotate`,
+`translate` and `scale` properties in their 3D forms, and any 2D functions in the same
+list multiply into one 4x4 matrix, the perspective inside it. The box carries it as
+`NodeEntry::transform_3d` and `PlanModifier::Transform3D`, and the renderer receives one
+`Transform3D` modifier with the `transform-origin` as a fraction of the box. A matrix that
+does not come apart into rotations and scales is sent as it is. A function that is 3D by
+name only (`translateZ(0)`, `scale3d(2, 3, 1)`, `rotateZ()`) stays the 2D transform it
+reduces to. A pointer is tested against the shape the 3D transform draws, and a point the
+transform puts behind the viewer hits nothing. `backface-visibility: hidden` goes with the
+matrix: a box whose back is turned to the viewer takes no pointer, and the renderer leaves
+it out. `transform-style: preserve-3d` is drawn flat, each child in its parent's plane;
+the elements that ask for it are listed in `DisplayList::flattened_spaces` and named once
+each on stderr. The warning that a 3D transform was skipped is gone.
+
+A parent's `perspective` property, with its `perspective-origin`, applies to its children's
+3D transforms. It is multiplied in front of the child's own functions, about the
+perspective origin of the parent's border box, and travels inside the child's one matrix:
+no record carries it separately. `perspective: none` changes nothing, a child with a 2D
+transform keeps its 2D transform, and the perspective goes no further down than the
+parent's own children. A scroll inside the parent does not move the perspective origin
+against its children.
+
+A transition or `@keyframes` animation that passes through a 3D transform is not played,
+because the renderer animates 2D transform functions only: the box takes the transform at
+once, and the motion is listed in `DisplayList::skipped_transforms` and named on stderr.
+
+`Matrix3D`, `PlaneMap`, `Transform3D` and `FlattenedSpace` are new in
+`dioxus_compose::html`. `NodeEntry::drawn_map` gives a box's transform, 2D or 3D, as a map
+of the page. `DisplayList::project` answers `None` for a point behind the viewer.
+
 ### Everything compose-rust 0.0.10 added, written in rsx
 
 `Image` takes `content_scale`: `ContentScale::Fit` shows the whole picture, `Crop` covers

@@ -246,11 +246,7 @@ fn clickable(records: &[Record]) -> (u32, u64) {
 
 fn click(host: &mut Host, (node_id, handler_id): (u32, u64)) -> Vec<Record> {
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id,
-            handler_id,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(node_id, handler_id, EventPayload::Clicked))
         .expect("the click is dispatched");
     tree(records(batch))
 }
@@ -479,12 +475,8 @@ fn fr34_click_reaches_the_dom_handler_through_the_renderer() {
     );
 
     assert!(
-        host.dispatch(HostEvent {
-            node_id: node + 1000,
-            handler_id: handler,
-            payload: EventPayload::Clicked,
-        })
-        .is_err(),
+        host.dispatch(HostEvent::new(node + 1000, handler, EventPayload::Clicked))
+            .is_err(),
         "a handler is only reached from the node it was set on"
     );
 
@@ -791,11 +783,11 @@ fn fr34_typed_text_reaches_oninput_and_is_not_sent_back() {
     let handler = handler_of(&first, field, PropertyKind::OnValueChange);
 
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id: field,
-            handler_id: handler,
-            payload: EventPayload::TextChanged("Ada Lovelace"),
-        })
+        .dispatch(HostEvent::new(
+            field,
+            handler,
+            EventPayload::TextChanged("Ada Lovelace"),
+        ))
         .unwrap();
     let after = tree(records(batch));
     assert_eq!(
@@ -837,10 +829,10 @@ fn handlers_for(records: &[Record], property: PropertyKind) -> Vec<(u32, u64)> {
 
 fn enter(host: &mut Host, (node_id, handler_id): (u32, u64), ctrl_key: bool) -> i64 {
     let (_, result) = host
-        .dispatch(HostEvent {
+        .dispatch(HostEvent::new(
             node_id,
             handler_id,
-            payload: EventPayload::KeyDown {
+            EventPayload::KeyDown {
                 key: dioxus_compose::schema::Key::Enter,
                 shift_key: true,
                 ctrl_key,
@@ -850,7 +842,7 @@ fn enter(host: &mut Host, (node_id, handler_id): (u32, u64), ctrl_key: bool) -> 
                 code: 0x28,
                 text: "Enter",
             },
-        })
+        ))
         .expect("the key is dispatched");
     result
 }
@@ -929,10 +921,10 @@ fn fr34_key_reaches_the_focused_dom_handler() {
     assert_eq!(take_heard(), vec!["div keydown Enter".to_string()]);
 
     assert!(
-        host.dispatch(HostEvent {
-            node_id: field + 1000,
-            handler_id: field_keys.1,
-            payload: EventPayload::KeyDown {
+        host.dispatch(HostEvent::new(
+            field + 1000,
+            field_keys.1,
+            EventPayload::KeyDown {
                 key: dioxus_compose::schema::Key::Enter,
                 shift_key: false,
                 ctrl_key: false,
@@ -941,8 +933,8 @@ fn fr34_key_reaches_the_focused_dom_handler() {
                 repeat: false,
                 code: 0x28,
                 text: "Enter",
-            },
-        })
+            }
+        ))
         .is_err(),
         "a key handler is only reached from the node it was set on"
     );
@@ -982,10 +974,10 @@ fn fr34_function_and_context_menu_keys_reach_the_page_as_their_dom_keys() {
         (Wire::ContextMenu, "ContextMenu"),
     ];
     for (key, _) in keys {
-        host.dispatch(HostEvent {
+        host.dispatch(HostEvent::new(
             node_id,
             handler_id,
-            payload: EventPayload::KeyDown {
+            EventPayload::KeyDown {
                 key,
                 shift_key: false,
                 ctrl_key: false,
@@ -995,7 +987,7 @@ fn fr34_function_and_context_menu_keys_reach_the_page_as_their_dom_keys() {
                 code: 0,
                 text: "",
             },
-        })
+        ))
         .expect("the key is dispatched");
     }
     let expected: Vec<String> = keys
@@ -1024,11 +1016,11 @@ fn focusable() -> Element {
 }
 
 fn type_into(host: &mut Host, (node_id, handler_id): (u32, u64), text: &str) {
-    host.dispatch(HostEvent {
+    host.dispatch(HostEvent::new(
         node_id,
         handler_id,
-        payload: EventPayload::TextChanged(text),
-    })
+        EventPayload::TextChanged(text),
+    ))
     .expect("the text is dispatched");
 }
 
@@ -1060,11 +1052,11 @@ fn fr34_focus_and_blur_reach_the_dom_handler() {
         "focus is delivered once"
     );
 
-    host.dispatch(HostEvent {
-        node_id: leaving.0,
-        handler_id: leaving.1,
-        payload: EventPayload::FocusLost,
-    })
+    host.dispatch(HostEvent::new(
+        leaving.0,
+        leaving.1,
+        EventPayload::FocusLost,
+    ))
     .expect("the focus loss is dispatched");
     assert_eq!(
         take_heard(),
@@ -1160,11 +1152,11 @@ fn fr34_prefers_color_scheme_follows_the_system_appearance_the_renderer_reports(
     use dioxus_compose::schema::SystemColorScheme;
     let report = |host: &mut Host, scheme| {
         let (batch, _) = host
-            .dispatch(HostEvent {
-                node_id: 0,
-                handler_id: 0,
-                payload: EventPayload::ColorSchemeChanged(scheme),
-            })
+            .dispatch(HostEvent::new(
+                0,
+                0,
+                EventPayload::ColorSchemeChanged(scheme),
+            ))
             .expect("the report is dispatched");
         tree(records(batch))
     };
@@ -2154,4 +2146,51 @@ fn fr34_border_top_draws_on_a_block_with_side_margins() {
         });
         assert_eq!(width, Some(28.0), "28px wide: {modifiers:?}");
     }
+}
+
+fn dialog_cards() -> Element {
+    rsx! {
+        style { ".modal {{ position: fixed; left: 0; top: 0; right: 0; bottom: 0; display: flex; align-items: center; justify-content: center; }}" }
+        div { class: "modal", role: "presentation",
+            div { role: "dialog", "aria-modal": "true", "aria-label": "Trust",
+                div {
+                    b { "Trust this folder?" }
+                    button { "aria-label": "Trust", onclick: move |_| {}, "Trust" }
+                    button { "aria-label": "Don't trust", onclick: move |_| {}, "Don't trust" }
+                }
+            }
+        }
+        div { class: "modal", role: "presentation",
+            div { role: "alertdialog", "aria-modal": "true", "aria-label": "Close",
+                div {
+                    b { "Save changes?" }
+                    button { "aria-label": "Save", onclick: move |_| {}, "Save" }
+                    button { "aria-label": "Discard", onclick: move |_| {}, "Discard" }
+                }
+            }
+        }
+    }
+}
+
+/// The content of a `role="dialog"` card reaches the accessibility tree exactly as the same
+/// content under `role="alertdialog"` does: the card is a named group and each button inside
+/// it is a named button.
+#[test]
+fn fr34_dialog_descendants_reach_the_accessibility_tree() {
+    let mut host = Host::html(dialog_cards, config);
+    let first = tree(records(host.rebuild().unwrap()));
+    let groups: Vec<_> = semantics_of(&first, SemanticsRole::Group)
+        .into_iter()
+        .filter_map(|(node, _)| accessible_name(&first, node))
+        .collect();
+    assert_eq!(groups, ["Trust", "Close"], "{first:#?}");
+    let buttons: Vec<_> = semantics_of(&first, SemanticsRole::Button)
+        .into_iter()
+        .filter_map(|(node, _)| accessible_name(&first, node))
+        .collect();
+    assert_eq!(
+        buttons,
+        ["Trust", "Don't trust", "Save", "Discard"],
+        "{first:#?}"
+    );
 }

@@ -39,6 +39,11 @@ const TEXT_LAYOUT_BITS: [(PropertyKind, u32); 7] = [
 #[derive(Clone, PartialEq)]
 pub struct SpanFontTable(pub compose_rust::spans::TextSpans);
 
+/// The OpenType feature table of a `Text`'s runs, as an attribute of its own, for the same
+/// reason: the runs travel as `spans` and the features each of them names as this.
+#[derive(Clone, PartialEq)]
+pub struct SpanFeatureTable(pub compose_rust::spans::TextSpans);
+
 #[derive(Clone, Copy, Debug)]
 struct Handler {
     id: u64,
@@ -145,11 +150,19 @@ pub mod slot {
     pub const PRESS_FEEDBACK: u16 = BORDER + 11;
     pub const SEMANTICS: u16 = BORDER + 12;
     pub const CORNER_CURVE: u16 = BORDER + 13;
+    // The constraints and the press area come after the padding, as they do in
+    // compose-rust's own writer, so a size bound is the content's and not the margin's.
+    pub const SIZE_IN: u16 = BORDER + 14;
+    pub const ASPECT_RATIO: u16 = BORDER + 15;
+    pub const MIN_TOUCH_TARGET: u16 = BORDER + 16;
+    pub const OVERLAY: u16 = BORDER + 17;
+    pub const STICKY: u16 = BORDER + 18;
+    pub const UNBOUNDED_WIDTH: u16 = BORDER + 19;
 }
 
 /// How many Modifier slots a node has. The slot numbers are assigned in `set_modifier`,
 /// and this is one past the last of them.
-const MODIFIER_SLOTS: usize = slot::CORNER_CURVE as usize + 1;
+const MODIFIER_SLOTS: usize = slot::UNBOUNDED_WIDTH as usize + 1;
 
 /// How many background image layers one node can carry, one `BackgroundBrush` modifier
 /// each. The first is drawn at the bottom.
@@ -169,6 +182,10 @@ const SENT_WHEN_SET: &[PropertyKind] = &[
     PropertyKind::ActiveTrackColor,
     PropertyKind::ContainerColor,
     PropertyKind::CheckColor,
+    PropertyKind::OutlineColor,
+    PropertyKind::Indeterminate,
+    PropertyKind::ThumbElevation,
+    PropertyKind::TrackBorder,
     PropertyKind::ControlSize,
     PropertyKind::ReportSize,
     PropertyKind::Scrim,
@@ -197,6 +214,18 @@ const SENT_WHEN_SET: &[PropertyKind] = &[
     PropertyKind::Minimap,
     PropertyKind::ViewZones,
     PropertyKind::WordWrap,
+    // An `Icon` drawn from an SVG sends `IconAsset` in place of this, and nothing for it.
+    PropertyKind::Asset,
+    PropertyKind::PlaceholderColor,
+    PropertyKind::CaretColor,
+    PropertyKind::IconAsset,
+    PropertyKind::Presentation,
+    PropertyKind::MaxWidth,
+    PropertyKind::Separator,
+    PropertyKind::SpanFontFeatures,
+    PropertyKind::ContentPaddingDp,
+    PropertyKind::FixedGutterColumns,
+    PropertyKind::NativeVisible,
 ];
 
 /// How many shadows one node can carry. Each takes a chain position of its own, because a
@@ -276,6 +305,9 @@ pub struct ComposeRenderer {
 
     /// Which editor node each code editor handle is attached to, by the handle's token.
     editors: HashMap<u32, u32>,
+    /// The platform view last handed to each `NativeView` node. The view goes out as a
+    /// command rather than a property, so it is written only when it changed.
+    native_views: HashMap<u32, u64>,
     /// The elements whose `pointer_kinds` is not empty. A pointer handler is announced to
     /// the Renderer only for these, so a node that names no kinds takes no pointer input.
     pointer_on: HashSet<usize>,
@@ -464,6 +496,7 @@ impl ComposeRenderer {
 
             // Empty for a screen without an editor handle, which allocates nothing.
             editors: HashMap::new(),
+            native_views: HashMap::new(),
             pointer_on: HashSet::new(),
             pointer_announced: HashSet::new(),
             sent_when_set: HashSet::new(),
@@ -740,6 +773,12 @@ impl ComposeRenderer {
             "match_parent_size" => Some(MATCH_PARENT_SIZE),
             "window_drag" => Some(WINDOW_DRAG),
             "press_feedback" => Some(PRESS_FEEDBACK),
+            "size_in" => Some(SIZE_IN),
+            "aspect_ratio" => Some(ASPECT_RATIO),
+            "min_touch_target" => Some(MIN_TOUCH_TARGET),
+            "overlay" => Some(OVERLAY),
+            "sticky" => Some(STICKY),
+            "unbounded_width" => Some(UNBOUNDED_WIDTH),
             _ => None,
         };
         let slot = slot_of(name)?;
@@ -972,6 +1011,56 @@ impl ComposeRenderer {
                 Some(Some((CLIP, Modifier::Clip(*enabled))))
             }
             "alpha" => Some(Some((ALPHA, Modifier::Alpha(float(value)?)))),
+            // A paint laid over the node, as the bits of a Paint like every other colour.
+            "overlay" => Some(Some((
+                OVERLAY,
+                Modifier::Overlay(compose_rust::Paint::from_bits(integer(value)? as u64)?),
+            ))),
+            "min_touch_target" => Some(Some((
+                MIN_TOUCH_TARGET,
+                Modifier::MinTouchTarget {
+                    size: float(value)?,
+                },
+            ))),
+            "sticky" | "unbounded_width" => {
+                let enabled = as_bool(value)?;
+                Some(Some((
+                    slot,
+                    match (enabled, name) {
+                        (false, _) => Modifier::Empty,
+                        (true, "sticky") => Modifier::Sticky,
+                        _ => Modifier::UnboundedWidth,
+                    },
+                )))
+            }
+            // Four bounds, or a ratio and which constraints it tries first: carried as the
+            // whole modifier so the numbers arrive as one record. A bare number is a ratio
+            // that tries the width's constraints first, as Compose's `aspectRatio` does.
+            "size_in" => {
+                let AttributeValue::Any(any) = value else {
+                    return None;
+                };
+                if let Some(bounds) = any.as_any().downcast_ref::<crate::widgets::SizeIn>() {
+                    return Some(Some((SIZE_IN, bounds.to_modifier())));
+                }
+                match as_modifier(value)? {
+                    m @ Modifier::SizeIn { .. } => Some(Some((SIZE_IN, m))),
+                    _ => None,
+                }
+            }
+            "aspect_ratio" => match value {
+                AttributeValue::Any(_) => match as_modifier(value)? {
+                    m @ Modifier::AspectRatio { .. } => Some(Some((ASPECT_RATIO, m))),
+                    _ => None,
+                },
+                _ => Some(Some((
+                    ASPECT_RATIO,
+                    Modifier::AspectRatio {
+                        ratio: float(value)?,
+                        match_height_constraints_first: false,
+                    },
+                ))),
+            },
             // A value outside 0..=1 is drawn as the nearer end and NaN as 0, which is what
             // the Renderer does with it too; sending it already clamped keeps the two equal.
             "corner_curve" => Some(Some((
@@ -1371,6 +1460,23 @@ impl ComposeRenderer {
             }
             return;
         }
+        // A code editor's room above its first line and below its last, as two `f32` in dp.
+        if property == PropertyKind::ContentPaddingDp
+            && let AttributeValue::Any(any) = value
+        {
+            if let Some(padding) = any
+                .as_any()
+                .downcast_ref::<compose_rust::code::ContentPadding>()
+            {
+                let bytes = padding.to_bytes();
+                self.write(Mutation::SetProp {
+                    node_id,
+                    property,
+                    value: PropertyValue::Bytes(&bytes),
+                });
+            }
+            return;
+        }
         // OpenType features, as one 8-byte record each: the four tag bytes, then the value
         // as a little-endian `u32`. Up to the most a node may carry, the records are built
         // on the stack, so a text that keeps its features costs no allocation.
@@ -1451,6 +1557,41 @@ impl ComposeRenderer {
                             node_id,
                             property,
                             value: PropertyValue::Bytes(vec),
+                        });
+                    }
+                }
+                _ => {}
+            }
+            return;
+        }
+        // A width and a paint, as an `f32` and the paint's `u64` bits in 12 bytes: the
+        // `Border` modifier's fields in its order.
+        if property == PropertyKind::TrackBorder {
+            match value {
+                AttributeValue::None => {
+                    self.write(Mutation::SetProp {
+                        node_id,
+                        property,
+                        value: PropertyValue::None,
+                    });
+                }
+                AttributeValue::Any(any) => {
+                    let a = any.as_any();
+                    let bytes = if let Some(&(width, paint)) =
+                        a.downcast_ref::<(f32, compose_rust::Paint)>()
+                    {
+                        let mut bytes = [0_u8; 12];
+                        bytes[0..4].copy_from_slice(&width.to_bits().to_le_bytes());
+                        bytes[4..12].copy_from_slice(&paint.to_bits().to_le_bytes());
+                        Some(bytes)
+                    } else {
+                        a.downcast_ref::<[u8; 12]>().copied()
+                    };
+                    if let Some(bytes) = bytes {
+                        self.write(Mutation::SetProp {
+                            node_id,
+                            property,
+                            value: PropertyValue::Bytes(&bytes),
                         });
                     }
                 }
@@ -1595,6 +1736,8 @@ impl ComposeRenderer {
                     PropertyValue::Bytes(spans.as_bytes())
                 } else if let Some(table) = any.downcast_ref::<SpanFontTable>() {
                     PropertyValue::Bytes(table.0.font_table())
+                } else if let Some(table) = any.downcast_ref::<SpanFeatureTable>() {
+                    PropertyValue::Bytes(table.0.feature_table())
                 } else if let Some(fonts) = any.downcast_ref::<compose_rust::fonts::FontRefs>() {
                     PropertyValue::Bytes(fonts.as_bytes())
                 } else if let Some(decorations) =
@@ -1825,6 +1968,7 @@ impl ComposeRenderer {
         if !self.editors.is_empty() {
             self.editors.retain(|_, node| *node != node_id);
         }
+        self.native_views.remove(&node_id);
         for slot in self.children.remove(&node_id).unwrap_or_default() {
             match slot {
                 Slot::Node(child) => self.forget(child),
@@ -2076,6 +2220,30 @@ impl WriteMutations for ComposeRenderer {
                 }
                 return;
             }
+            // The platform view of a `NativeView`. A new node with no view needs nothing
+            // written, and a view that did not change is not handed over again.
+            if name == "handle" {
+                let handle = match value {
+                    AttributeValue::Int(handle) => *handle as u64,
+                    AttributeValue::Any(any) => {
+                        let Some(handle) =
+                            any.as_any().downcast_ref::<compose_rust::NativeHandle>()
+                        else {
+                            return;
+                        };
+                        handle.0
+                    }
+                    _ => 0,
+                };
+                let previous = self.native_views.insert(node_id, handle);
+                if previous.unwrap_or(0) != handle {
+                    self.write(Mutation::AttachNativeView {
+                        node_id,
+                        handle: compose_rust::NativeHandle(handle),
+                    });
+                }
+                return;
+            }
             if name == "pointer_kinds" {
                 if matches!(value, AttributeValue::Int(kinds) if *kinds != 0) {
                     self.pointer_on.insert(id.0);
@@ -2290,6 +2458,7 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "codepointer" | "oncodepointer" => Some(PropertyKind::OnCodePointer),
         "editgroupresult" | "oneditgroupresult" => Some(PropertyKind::OnEditGroupResult),
         "motionfinished" | "onmotionfinished" => Some(PropertyKind::OnMotionFinished),
+        "nativeviewfocus" | "onnativeviewfocus" => Some(PropertyKind::OnNativeViewFocus),
         "rangerequest" | "onrangerequest" => Some(PropertyKind::OnRangeRequested),
         "dismiss" | "ondismiss" => Some(PropertyKind::OnDismiss),
         "filesentered" | "onfilesentered" => Some(PropertyKind::OnFilesEntered),

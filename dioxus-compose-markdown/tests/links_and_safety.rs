@@ -166,11 +166,11 @@ fn fr37_a_theme_change_costs_the_document_nothing() {
     ] {
         let (batch, _) = screen
             .host
-            .dispatch(HostEvent {
-                node_id: 0,
-                handler_id: 0,
-                payload: EventPayload::DesignSystemResolved(system),
-            })
+            .dispatch(HostEvent::new(
+                0,
+                0,
+                EventPayload::DesignSystemResolved(system),
+            ))
             .expect("the design system change failed");
         let mutations = decode_batch(batch).expect("decode");
         assert!(
@@ -178,4 +178,83 @@ fn fr37_a_theme_change_costs_the_document_nothing() {
             "switching to {system:?} sent {mutations:?}"
         );
     }
+}
+
+/// Bare `https://` and `http://` URLs outside code spans and existing links route through
+/// `on_link`, while URLs inside inline code, existing links, and fenced code blocks do not
+/// become extra bare links.
+#[test]
+fn fr37_bare_url_autolinks_outside_code_and_links() {
+    let source = concat!(
+        "Visit https://example.com/secure and http://example.com/plain. ",
+        "Not `https://example.com/in-code` and keep [https://example.com/label](https://example.com/dest).\n\n",
+        "```\nhttps://example.com/in-block\n```\n",
+    );
+    apps::reset(source, quiet());
+    let mut screen = Screen::new(apps::one_shot);
+    let node = screen
+        .tree
+        .text_node(
+            "Visit https://example.com/secure and http://example.com/plain. \
+             Not https://example.com/in-code and keep https://example.com/label.",
+        )
+        .unwrap_or_else(|| panic!("no paragraph:\n{}", screen.tree.dump()));
+    let text = screen.tree.nodes[&node].text.clone().unwrap();
+    let spans: Vec<_> = TextSpans::from_bytes(screen.tree.nodes[&node].spans.clone())
+        .spans()
+        .collect();
+    let linked: Vec<_> = spans
+        .iter()
+        .filter_map(|span| {
+            span.on_click.map(|handler| {
+                (
+                    &text[span.start as usize..(span.start + span.length) as usize],
+                    handler,
+                )
+            })
+        })
+        .collect();
+    assert_eq!(
+        linked.iter().map(|(slice, _)| *slice).collect::<Vec<_>>(),
+        vec![
+            "https://example.com/secure",
+            "http://example.com/plain",
+            "https://example.com/label",
+        ],
+        "expected bare URLs and existing link only: {spans:?}"
+    );
+    let code_spans: Vec<_> = spans
+        .iter()
+        .filter(|span| {
+            &text[span.start as usize..(span.start + span.length) as usize]
+                == "https://example.com/in-code"
+        })
+        .collect();
+    assert_eq!(code_spans.len(), 1, "code span missing: {spans:?}");
+    assert!(
+        code_spans[0].on_click.is_none(),
+        "URL inside inline code became a link: {:?}",
+        code_spans[0]
+    );
+    for (_, handler) in linked {
+        screen.click(node, handler);
+    }
+    assert_eq!(
+        apps::links(),
+        vec![
+            "https://example.com/secure".to_owned(),
+            "http://example.com/plain".to_owned(),
+            "https://example.com/dest".to_owned(),
+        ]
+    );
+    let code_block = screen
+        .tree
+        .text_node("https://example.com/in-block")
+        .unwrap_or_else(|| panic!("no code block:\n{}", screen.tree.dump()));
+    assert!(
+        TextSpans::from_bytes(screen.tree.nodes[&code_block].spans.clone())
+            .spans()
+            .all(|span| span.on_click.is_none()),
+        "URL inside fenced code block became a link"
+    );
 }

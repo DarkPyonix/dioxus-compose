@@ -214,11 +214,7 @@ fn fr15_dialog_seeds_open_state_and_reports_dismissal() {
     // A dismissal carries no value, so it travels as the empty payload, encoded and
     // decoded exactly as the Renderer would send it.
     let mut wire = Vec::new();
-    let event = HostEvent {
-        node_id: dialog,
-        handler_id,
-        payload: EventPayload::Clicked,
-    };
+    let event = HostEvent::new(dialog, handler_id, EventPayload::Clicked);
     encode_event(&event, &mut wire).unwrap();
     host.dispatch_event(&wire).unwrap();
     assert_eq!(DISMISSED.with(|count| *count.borrow()), 1);
@@ -293,11 +289,7 @@ fn fr15_tabs_seed_the_selection_and_report_it_as_the_tab_s_own_click() {
     let third = children[2];
     let handler_id = handler_of(&records, third, PropertyKind::OnClick);
     let mut wire = Vec::new();
-    let event = HostEvent {
-        node_id: third,
-        handler_id,
-        payload: EventPayload::Clicked,
-    };
+    let event = HostEvent::new(third, handler_id, EventPayload::Clicked);
     encode_event(&event, &mut wire).unwrap();
     host.dispatch_event(&wire).unwrap();
     assert_eq!(SELECTED.with(|log| log.borrow().clone()), vec![2]);
@@ -369,14 +361,14 @@ fn fr15_lazy_row_materialises_exactly_the_requested_range() {
 
     let handler_id = handler_of(&records, row, PropertyKind::OnRangeRequested);
     let mut wire = Vec::new();
-    let event = HostEvent {
-        node_id: row,
+    let event = HostEvent::new(
+        row,
         handler_id,
-        payload: EventPayload::RangeRequested {
+        EventPayload::RangeRequested {
             start: 500,
             count: 24,
         },
-    };
+    );
     encode_event(&event, &mut wire).unwrap();
     let (batch, _) = host.dispatch_event(&wire).unwrap();
     let batch = batch.to_vec();

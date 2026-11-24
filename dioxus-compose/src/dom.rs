@@ -15,6 +15,7 @@ mod writer;
 
 use std::any::Any;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::{Pin, pin};
 use std::rc::Rc;
@@ -35,11 +36,12 @@ use dioxus_html::point_interaction::{
     InteractionElementOffset, InteractionLocation, ModifiersInteraction, PointerInteraction,
 };
 use dioxus_html::{
-    AnimationData, Code, CompositionData, FocusData, HasAnimationData, HasClipboardData,
-    HasCompositionData, HasFocusData, HasKeyboardData, HasMouseData, HasTransitionData,
-    HtmlEventConverter, Key, KeyboardData, Location, Modifiers, MountedData, MountedError,
-    MouseData, PlatformEventData, RenderedElementBacking, ScrollBehavior, ScrollToOptions,
-    TransitionData,
+    AnimationData, Code, CompositionData, FocusData, HasAnimationData, HasCancelData,
+    HasClipboardData, HasCompositionData, HasFocusData, HasImageData, HasKeyboardData,
+    HasMediaData, HasMouseData, HasSelectionData, HasToggleData, HasTouchData, HasTransitionData,
+    HasVisibleData, HtmlEventConverter, Key, KeyboardData, Location, Modifiers, MountedData,
+    MountedError, MouseData, PlatformEventData, RenderedElementBacking, ScrollBehavior,
+    ScrollToOptions, TouchPoint, TransitionData,
 };
 
 use crate::html::NodeId;
@@ -53,7 +55,8 @@ use crate::layout::{
 use crate::paint::bridge::ClickTargets;
 use crate::paint::build::build_display_list;
 use crate::paint::display_list::{
-    AnimatedProperty, DisplayList, DisplayListDiff, InputKind, Rect, Sides, SkippedTransform,
+    AnimatedProperty, DisplayList, DisplayListDiff, FlattenedSpace, InputKind, Rect, Sides,
+    SkippedTransform,
 };
 use crate::paint::motion::{
     MotionState, Playing, SETTLE_MARGIN, Scan, rewrite_reduced_motion, transitions,
@@ -313,12 +316,18 @@ pub struct HtmlDom {
     /// not resolve yet ([`TextMeasurer::unsettled`]). While it is not zero, the next frame
     /// lays the page out again from scratch, up to [`UNSETTLED_RELAYOUTS`] times.
     unsettled: u32,
-    /// The text node of each author stylesheet and its CSS before `env()` is replaced, so
-    /// the sheets can be written again when a window variable changes.
+    /// The text node of each author stylesheet and its CSS before `prefers-reduced-motion`
+    /// and `env()` are replaced, so the sheets can be written again when a window variable
+    /// or the reduced-motion setting changes.
     author_sheets: Vec<(NodeId, String)>,
+    /// Whether `prefers-reduced-motion: reduce` matches in author stylesheets.
+    reduced_motion: bool,
     /// The values `env(safe-area-inset-*)` and `env(titlebar-area-*)` read.
     safe_area_insets: Option<Sides<f32>>,
     titlebar_area: Option<Rect>,
+    /// Nodes dropped from `blitz-dom` in the most recent `render` pass, for the runtime to
+    /// clear its own per-node state.
+    last_removed: Vec<NodeId>,
 }
 
 /// How many frames in a row a page whose text could not be measured yet is laid out
@@ -364,15 +373,15 @@ impl HtmlDom {
             mutator.append_children(html, &[head, body]);
             for css in &config.stylesheets {
                 let style = mutator.create_element(element_name("style", None), Vec::new());
-                let css = rewrite_reduced_motion(css, config.reduced_motion);
+                let rewritten = rewrite_reduced_motion(css, config.reduced_motion);
                 let text = mutator.create_text_node(&rewrite_env(
-                    &css,
+                    &rewritten,
                     config.safe_area_insets,
                     config.titlebar_area,
                 ));
                 mutator.append_children(style, &[text]);
                 mutator.append_children(head, &[style]);
-                author_sheets.push((text, css));
+                author_sheets.push((text, css.clone()));
             }
             let document = doc_root_id();
             mutator.append_children(document, &[html]);
@@ -409,8 +418,10 @@ impl HtmlDom {
             drag: drag::DragState::default(),
             unsettled: 0,
             author_sheets,
+            reduced_motion: config.reduced_motion,
             safe_area_insets: config.safe_area_insets,
             titlebar_area: config.titlebar_area,
+            last_removed: Vec::new(),
         };
         let mut writer = DomWriter::new(&mut dom.doc, &mut dom.state, &mut dom.layout_state);
         dom.vdom.rebuild(&mut writer);
@@ -422,14 +433,33 @@ impl HtmlDom {
     /// Runs pending work (handlers that wrote signals, scopes marked dirty) and applies
     /// the resulting mutations to the document.
     pub fn render(&mut self) {
+        self.last_removed.clear();
         let mut writer = DomWriter::new(&mut self.doc, &mut self.state, &mut self.layout_state);
         self.vdom.render_immediate(&mut writer);
         drop(writer);
+        if !self.state.removed_nodes.is_empty() {
+            let removed_vec = std::mem::take(&mut self.state.removed_nodes);
+            let removed: std::collections::HashSet<NodeId> = removed_vec.iter().copied().collect();
+            self.pointer.prune_removed(&removed);
+            self.focus_requests
+                .borrow_mut()
+                .retain(|(id, _)| !removed.contains(id));
+            self.scrolls
+                .borrow_mut()
+                .reported
+                .retain(|id, _| !removed.contains(id));
+            self.last_removed = removed_vec;
+        }
         if self.state.listeners_dirty {
             self.pointer.kinds.borrow_mut().take();
             self.state.listeners_dirty = false;
         }
         self.flush_mounts();
+    }
+
+    /// Takes the node ids dropped from `blitz-dom` during the most recent [`HtmlDom::render`].
+    pub(crate) fn take_removed_nodes(&mut self) -> Vec<NodeId> {
+        std::mem::take(&mut self.last_removed)
     }
 
     /// Applies any queued `autofocus` attribute, fires `onmounted` on newly mounted nodes,
@@ -504,13 +534,13 @@ impl HtmlDom {
     /// that first sees it.
     ///
     /// How a motion reaches the renderer depends on what it changes. `opacity`,
-    /// `transform` and `background-color` change nothing about layout, so a transition of
-    /// them is a [`TransitionStart`](crate::html::TransitionStart) in the returned list
-    /// and an `@keyframes` animation of them is on its entry's
+    /// `transform`, `color` and `background-color` change nothing about layout, so a
+    /// transition of them is a [`TransitionStart`](crate::html::TransitionStart) in the
+    /// returned list and an `@keyframes` animation of them is on its entry's
     /// [`animations`](crate::html::NodeEntry::animations), both described for a renderer
     /// to play by itself, with the entry holding the value the motion settles at or
-    /// starts from. Anything else that moves (`width`, `margin`, `color`, `all`) is ticked
-    /// by the Host: see [`HtmlDom::tick`].
+    /// starts from. Anything else that moves (`width`, `margin`, `all`) is ticked by the
+    /// Host: see [`HtmlDom::tick`].
     pub fn layout(&mut self, width: f32, height: f32, scale: f32) -> &DisplayList {
         self.layout_at(width, height, scale, false)
     }
@@ -665,6 +695,13 @@ impl HtmlDom {
         } else {
             0
         };
+        let scroll_offsets: HashMap<NodeId, (f32, f32)> = self
+            .scrolls
+            .borrow()
+            .reported
+            .iter()
+            .map(|(&id, pos)| (id, (pos.x as f32, pos.y as f32)))
+            .collect();
         let texts = &self.layout_state.texts;
         let list = if described {
             self.motion.begin_frame();
@@ -675,17 +712,25 @@ impl HtmlDom {
                 now,
                 skipped: Vec::new(),
             };
-            let mut list = build_display_list(&self.doc, texts, &mut lookup, Some(&mut playing));
+            let mut list = build_display_list(
+                &self.doc,
+                texts,
+                &mut lookup,
+                Some(&mut playing),
+                &scroll_offsets,
+            );
             list.skipped_transforms.append(&mut playing.skipped);
             // After the last use of `playing`, which holds the motion state mutably.
             apply_appearance(&mut list, |node| self.appearance_is_none(node));
             if animating {
-                list.transitions = transitions(&scan, self.current.as_ref(), &list);
+                let mut skipped = Vec::new();
+                list.transitions = transitions(&scan, self.current.as_ref(), &list, &mut skipped);
+                list.skipped_transforms.append(&mut skipped);
             }
             self.motion.end_frame();
             list
         } else {
-            let mut list = build_display_list(&self.doc, texts, &mut lookup, None);
+            let mut list = build_display_list(&self.doc, texts, &mut lookup, None, &scroll_offsets);
             apply_appearance(&mut list, |node| self.appearance_is_none(node));
             list
         };
@@ -742,9 +787,11 @@ impl HtmlDom {
         *self.resize.collect_buffer() = pending;
     }
 
-    /// Says on stderr, once for each, which element's which 3D transform the layout left
-    /// out. The display list carries them all in
-    /// [`skipped_transforms`](DisplayList::skipped_transforms).
+    /// Says on stderr, once for each, which element's motion through a 3D transform is not
+    /// played, and which element's `transform-style: preserve-3d` is drawn flat. The
+    /// display list carries them all in
+    /// [`skipped_transforms`](DisplayList::skipped_transforms) and
+    /// [`flattened_spaces`](DisplayList::flattened_spaces).
     fn report_skipped(&mut self, list: &DisplayList) {
         for SkippedTransform {
             node,
@@ -754,8 +801,23 @@ impl HtmlDom {
         {
             if self.motion.warned.insert((*node, transform.clone())) {
                 eprintln!(
-                    "dioxus-compose: <{tag}> (node {node}) has the 3D transform `{transform}`. \
-                     3D transforms are not drawn yet, so the element is drawn without it."
+                    "dioxus-compose: <{tag}> (node {node}) animates a 3D transform \
+                     (`{transform}`). The renderer animates 2D transform functions only, so \
+                     this motion is not played and the element is drawn with the transform \
+                     it rests at."
+                );
+            }
+        }
+        for FlattenedSpace { node, tag } in &list.flattened_spaces {
+            if self
+                .motion
+                .warned
+                .insert((*node, "transform-style: preserve-3d".to_string()))
+            {
+                eprintln!(
+                    "dioxus-compose: <{tag}> (node {node}) has `transform-style: \
+                     preserve-3d`. Its children do not share a 3D space here: each is drawn \
+                     flat into the element's plane, as with `transform-style: flat`."
                 );
             }
         }
@@ -865,7 +927,19 @@ impl HtmlDom {
 
     /// The topmost node at a point of the last layout, in document coordinates.
     pub fn hit_test(&self, x: f32, y: f32) -> Option<NodeId> {
-        self.current.as_ref()?.hit_test(x, y)
+        let list = self.current.as_ref()?;
+        let scrolls = self.scrolls.borrow();
+        if scrolls.reported.is_empty() {
+            list.hit_test(x, y)
+        } else {
+            list.hit_test_scrolled(x, y, |id| {
+                scrolls
+                    .reported
+                    .get(&id)
+                    .map(|pos| (pos.x as f32, pos.y as f32))
+                    .unwrap_or((0.0, 0.0))
+            })
+        }
     }
 
     /// The node an `event` at `node` is delivered to: `node` itself or its nearest
@@ -1201,6 +1275,14 @@ impl HtmlDom {
         self.doc.get_focussed_node_id()
     }
 
+    /// The explicitly focused element, or `None` when focus has fallen back to the document
+    /// root element.
+    pub(crate) fn explicit_focused(&self) -> Option<NodeId> {
+        let focused = self.doc.get_focussed_node_id()?;
+        let root = self.doc.try_root_element().map(|el| el.id);
+        (Some(focused) != root).then_some(focused)
+    }
+
     /// Moves keyboard focus to the next (or previous when `backward` is true) focusable
     /// element in document order.
     fn advance_tab_focus(&mut self, backward: bool) -> Option<NodeId> {
@@ -1289,7 +1371,14 @@ impl HtmlDom {
     /// `get_scroll_size`, and sends `scroll` to the element's own handler. Like a
     /// browser's `scroll` on an element, it does not bubble.
     pub fn scroll_changed(&mut self, node: NodeId, position: ScrollPosition) {
-        self.scrolls.borrow_mut().reported.insert(node, position);
+        let previous = self.scrolls.borrow_mut().reported.insert(node, position);
+        if previous != Some(position)
+            && self.layout_state.positions.values().any(|&pos| {
+                pos == style::properties::generated::longhands::position::computed_value::T::Sticky
+            })
+        {
+            self.state.dirty = true;
+        }
         if self.state.listeners(node).contains(&"scroll")
             && let Some(element) = self.state.element_of(node)
         {
@@ -1345,13 +1434,23 @@ impl HtmlDom {
     }
 
     fn focus_node(&mut self, node: NodeId) {
+        if self.doc.get_node(node).is_none() {
+            return;
+        }
         let previous = self.doc.get_focussed_node_id();
         if previous == Some(node) {
             return;
         }
         if let Some(prev) = previous {
-            self.state.mark_style_dirty(prev);
-            self.send_focus(prev, "blur", "focusout");
+            if self.doc.get_node(prev).is_some() {
+                self.state.mark_style_dirty(prev);
+                self.send_focus(prev, "blur", "focusout");
+            } else {
+                return;
+            }
+        }
+        if self.doc.get_node(node).is_none() {
+            return;
         }
         self.doc.set_focus_to(node);
         self.state.mark_style_dirty(node);
@@ -1363,7 +1462,7 @@ impl HtmlDom {
     /// before this, from [`HtmlDom::change`].
     /// A node that is not the focused one leaves the focus where it is.
     pub fn blur(&mut self, node: NodeId) {
-        if self.doc.get_focussed_node_id() == Some(node) {
+        if self.doc.get_focussed_node_id() == Some(node) && self.doc.get_node(node).is_some() {
             self.doc.clear_focus();
             self.state.mark_style_dirty(node);
         }
@@ -1613,8 +1712,27 @@ impl HtmlDom {
         true
     }
 
-    /// Writes each author stylesheet again with the current window variables in its
-    /// `env()`s. The style engine reads a changed `<style>` as a new sheet.
+    /// Whether `prefers-reduced-motion: reduce` matches in author stylesheets.
+    pub fn reduced_motion(&self) -> bool {
+        self.reduced_motion
+    }
+
+    /// Sets whether `prefers-reduced-motion: reduce` matches in author stylesheets.
+    /// The author stylesheets are written again with the new setting and every style is
+    /// resolved again at the next layout. An unchanged setting touches nothing. Returns
+    /// whether the setting changed.
+    pub fn set_reduced_motion(&mut self, reduced: bool) -> bool {
+        if self.reduced_motion == reduced {
+            return false;
+        }
+        self.reduced_motion = reduced;
+        self.rewrite_author_sheets();
+        true
+    }
+
+    /// Writes each author stylesheet again with the current `prefers-reduced-motion`
+    /// setting and window variables in its `env()`s. The style engine reads a changed
+    /// `<style>` as a new sheet.
     fn rewrite_author_sheets(&mut self) {
         if self.author_sheets.is_empty() {
             return;
@@ -1622,11 +1740,13 @@ impl HtmlDom {
         {
             let mut mutator = self.doc.mutate();
             for (text, css) in &self.author_sheets {
-                let css = rewrite_env(css, self.safe_area_insets, self.titlebar_area);
+                let css = rewrite_reduced_motion(css, self.reduced_motion);
+                let css = rewrite_env(&css, self.safe_area_insets, self.titlebar_area);
                 // A text node that is unchanged is left alone, and its sheet with it.
                 mutator.set_node_text(*text, &css);
             }
         }
+        self.state.stylesheet_dirty = true;
         self.state.mark_style_dirty(self.root);
         self.layout_state.invalidate_all();
     }
@@ -1993,9 +2113,7 @@ pub struct ClipboardEventData {
 
 impl ClipboardEventData {
     pub fn new(text: impl Into<String>) -> Self {
-        Self {
-            text: text.into(),
-        }
+        Self { text: text.into() }
     }
 
     pub fn text(&self) -> &str {
@@ -2240,18 +2358,105 @@ fn register_event_converter() {
     REGISTER.call_once(|| dioxus_html::set_event_converter(Box::new(Converter)));
 }
 
+/// Event data for HTML `cancel` events.
+#[derive(Clone, Default)]
+struct CancelEventData;
+
+impl HasCancelData for CancelEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML image `load` and `error` events.
+#[derive(Clone, Default)]
+struct ImageEventData {
+    load_error: bool,
+}
+
+impl HasImageData for ImageEventData {
+    fn load_error(&self) -> bool {
+        self.load_error
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML media events.
+#[derive(Clone, Default)]
+struct MediaEventData;
+
+impl HasMediaData for MediaEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML selection events.
+#[derive(Clone, Default)]
+struct SelectionEventData;
+
+impl HasSelectionData for SelectionEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML `toggle` events.
+#[derive(Clone, Default)]
+struct ToggleEventData;
+
+impl HasToggleData for ToggleEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML touch events.
+#[derive(Clone, Default)]
+struct TouchEventData;
+
+impl ModifiersInteraction for TouchEventData {
+    fn modifiers(&self) -> Modifiers {
+        Modifiers::empty()
+    }
+}
+
+impl HasTouchData for TouchEventData {
+    fn touches(&self) -> Vec<TouchPoint> {
+        Vec::new()
+    }
+
+    fn touches_changed(&self) -> Vec<TouchPoint> {
+        Vec::new()
+    }
+
+    fn target_touches(&self) -> Vec<TouchPoint> {
+        Vec::new()
+    }
+
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
+/// Event data for HTML intersection visibility events.
+#[derive(Clone, Default)]
+struct VisibleEventData;
+
+impl HasVisibleData for VisibleEventData {
+    fn as_any(&self) -> &dyn Any {
+        self
+    }
+}
+
 /// Turns the events this document sends into Dioxus event data: clicks, keys, focus, the
 /// `input`, `change` and `submit` events of form controls, animation and transition
-/// events, resize events, and drag events. Every other conversion is
-/// unreachable from here.
+/// events, resize events, and drag events. Event kinds this document does not yet emit
+/// fall back to empty default payloads instead of panicking.
 struct Converter;
-
-fn not_sent(kind: &str) -> ! {
-    panic!(
-        "the HTML path does not send {kind} events yet, so it has no {kind} data to \
-         convert; something else delivered one through the shared event converter"
-    )
-}
 
 impl HtmlEventConverter for Converter {
     fn convert_mouse_data(&self, event: &PlatformEventData) -> MouseData {
@@ -2271,8 +2476,12 @@ impl HtmlEventConverter for Converter {
             .clone();
         AnimationData::new(data)
     }
-    fn convert_cancel_data(&self, _: &PlatformEventData) -> dioxus_html::CancelData {
-        not_sent("cancel")
+    fn convert_cancel_data(&self, event: &PlatformEventData) -> dioxus_html::CancelData {
+        let data = event
+            .downcast::<CancelEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::CancelData::new(data)
     }
     fn convert_clipboard_data(&self, event: &PlatformEventData) -> dioxus_html::ClipboardData {
         let data = event
@@ -2309,8 +2518,12 @@ impl HtmlEventConverter for Converter {
             .clone();
         dioxus_html::FormData::new(data)
     }
-    fn convert_image_data(&self, _: &PlatformEventData) -> dioxus_html::ImageData {
-        not_sent("image")
+    fn convert_image_data(&self, event: &PlatformEventData) -> dioxus_html::ImageData {
+        let data = event
+            .downcast::<ImageEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::ImageData::new(data)
     }
     fn convert_keyboard_data(&self, event: &PlatformEventData) -> KeyboardData {
         let data = event
@@ -2319,8 +2532,12 @@ impl HtmlEventConverter for Converter {
             .clone();
         KeyboardData::new(data)
     }
-    fn convert_media_data(&self, _: &PlatformEventData) -> dioxus_html::MediaData {
-        not_sent("media")
+    fn convert_media_data(&self, event: &PlatformEventData) -> dioxus_html::MediaData {
+        let data = event
+            .downcast::<MediaEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::MediaData::new(data)
     }
     fn convert_mounted_data(&self, event: &PlatformEventData) -> MountedData {
         let data = event
@@ -2348,14 +2565,26 @@ impl HtmlEventConverter for Converter {
             .expect("every scroll event this document sends carries ScrollEventData");
         dioxus_html::ScrollData::new(data)
     }
-    fn convert_selection_data(&self, _: &PlatformEventData) -> dioxus_html::SelectionData {
-        not_sent("selection")
+    fn convert_selection_data(&self, event: &PlatformEventData) -> dioxus_html::SelectionData {
+        let data = event
+            .downcast::<SelectionEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::SelectionData::new(data)
     }
-    fn convert_toggle_data(&self, _: &PlatformEventData) -> dioxus_html::ToggleData {
-        not_sent("toggle")
+    fn convert_toggle_data(&self, event: &PlatformEventData) -> dioxus_html::ToggleData {
+        let data = event
+            .downcast::<ToggleEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::ToggleData::new(data)
     }
-    fn convert_touch_data(&self, _: &PlatformEventData) -> dioxus_html::TouchData {
-        not_sent("touch")
+    fn convert_touch_data(&self, event: &PlatformEventData) -> dioxus_html::TouchData {
+        let data = event
+            .downcast::<TouchEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::TouchData::new(data)
     }
     fn convert_transition_data(&self, event: &PlatformEventData) -> TransitionData {
         let data = event
@@ -2364,8 +2593,12 @@ impl HtmlEventConverter for Converter {
             .clone();
         TransitionData::new(data)
     }
-    fn convert_visible_data(&self, _: &PlatformEventData) -> dioxus_html::VisibleData {
-        not_sent("visible")
+    fn convert_visible_data(&self, event: &PlatformEventData) -> dioxus_html::VisibleData {
+        let data = event
+            .downcast::<VisibleEventData>()
+            .cloned()
+            .unwrap_or_default();
+        dioxus_html::VisibleData::new(data)
     }
     fn convert_wheel_data(&self, event: &PlatformEventData) -> dioxus_html::WheelData {
         let data = event
@@ -2373,5 +2606,74 @@ impl HtmlEventConverter for Converter {
             .expect("every wheel event this document sends carries the pointer event data")
             .clone();
         dioxus_html::WheelData::new(data)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use dioxus_html::{
+        CancelData, ImageData, MediaData, SelectionData, ToggleData, TouchData, VisibleData,
+        VisibleError,
+    };
+
+    #[test]
+    fn fr34_event_converter_converts_all_fallback_events_without_panicking() {
+        register_event_converter();
+        let empty = PlatformEventData::new(Box::new(()));
+
+        let cancel = CancelData::from(&empty);
+        assert!(cancel.downcast::<CancelEventData>().is_some());
+
+        let image = ImageData::from(&empty);
+        assert!(!image.load_error());
+
+        let media = MediaData::from(&empty);
+        assert!(media.downcast::<MediaEventData>().is_some());
+
+        let selection = SelectionData::from(&empty);
+        assert!(selection.downcast::<SelectionEventData>().is_some());
+
+        let toggle = ToggleData::from(&empty);
+        assert!(toggle.downcast::<ToggleEventData>().is_some());
+
+        let touch = TouchData::from(&empty);
+        assert!(touch.modifiers().is_empty());
+        assert!(touch.touches().is_empty());
+        assert!(touch.touches_changed().is_empty());
+        assert!(touch.target_touches().is_empty());
+
+        let visible = VisibleData::from(&empty);
+        assert!(matches!(
+            visible.is_intersecting(),
+            Err(VisibleError::NotSupported)
+        ));
+        assert!(matches!(
+            visible.get_bounding_client_rect(),
+            Err(VisibleError::NotSupported)
+        ));
+        assert!(matches!(
+            visible.get_intersection_ratio(),
+            Err(VisibleError::NotSupported)
+        ));
+        assert!(matches!(
+            visible.get_intersection_rect(),
+            Err(VisibleError::NotSupported)
+        ));
+        assert!(matches!(
+            visible.get_root_bounds(),
+            Err(VisibleError::NotSupported)
+        ));
+        assert!(matches!(
+            visible.get_time(),
+            Err(VisibleError::NotSupported)
+        ));
+    }
+
+    #[test]
+    fn fr34_event_converter_preserves_image_load_error() {
+        let event = PlatformEventData::new(Box::new(ImageEventData { load_error: true }));
+        let image = Converter.convert_image_data(&event);
+        assert!(image.load_error());
     }
 }

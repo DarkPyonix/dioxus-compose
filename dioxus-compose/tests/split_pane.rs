@@ -115,25 +115,17 @@ fn handler_of(records: &[Record], node: u32, property: PropertyKind) -> u64 {
 
 fn send(host: &mut Host, node: u32, handler: u64, payload: EventPayload<'static>) -> Vec<Record> {
     let mut wire = Vec::new();
-    encode_event(
-        &HostEvent {
-            node_id: node,
-            handler_id: handler,
-            payload,
-        },
-        &mut wire,
-    )
-    .unwrap();
+    encode_event(&HostEvent::new(node, handler, payload), &mut wire).unwrap();
     let (batch, _) = host.dispatch_event(&wire).unwrap();
     records(batch)
 }
 
 fn resize(host: &mut Host, width_dp: f32) -> Vec<Record> {
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id: 0,
-            handler_id: 0,
-            payload: EventPayload::WindowSizeChanged {
+        .dispatch(HostEvent::new(
+            0,
+            0,
+            EventPayload::WindowSizeChanged {
                 width_dp,
                 height_dp: 800.0,
                 class: WindowSizeClass::from_width_dp(width_dp),
@@ -141,8 +133,9 @@ fn resize(host: &mut Host, width_dp: f32) -> Vec<Record> {
                 safe_area_leading: 0.0,
                 safe_area_top: 0.0,
                 safe_area_trailing: 0.0,
+                safe_area_bottom: 0.0,
             },
-        })
+        ))
         .unwrap();
     records(batch)
 }

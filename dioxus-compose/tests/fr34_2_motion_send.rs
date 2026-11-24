@@ -14,10 +14,11 @@ use dioxus_compose::html::prelude::*;
 use dioxus_compose::html::{
     HtmlConfig, TextMeasureRequest, TextMeasurer, TextMetrics, WidthConstraint,
 };
-use dioxus_compose::protocol::{HostEvent, Mutation, decode_batch};
+use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch};
 use dioxus_compose::schema::{
-    AnimatedProperty, AnimationControl, AnimationEventKind, AnimationEvents, EventPayload,
-    FillMode, KeyframeValue, Modifier, PlayState, PlaybackDirection, Timing, TransformFunctionKind,
+    AnimatedProperty, AnimationControl, AnimationEventKind, AnimationEvents, Color,
+    ColorInterpolation, EventPayload, FillMode, KeyframeValue, Modifier, Paint, PlayState,
+    PlaybackDirection, PropertyKind, ReducedMotion, Timing, TransformFunctionKind, WidgetKind,
 };
 use dioxus_core::Attribute;
 use dioxus_elements::{AnimationEvent, TransitionEvent};
@@ -110,11 +111,7 @@ fn clickable(batch: &[Mutation<'static>]) -> (u32, u64) {
 
 fn click(host: &mut Host, (node_id, handler_id): (u32, u64)) -> Vec<Mutation<'static>> {
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id,
-            handler_id,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(node_id, handler_id, EventPayload::Clicked))
         .expect("the click is dispatched");
     owned(batch)
 }
@@ -210,10 +207,10 @@ fn fr34_2_the_end_of_a_transition_reaches_the_page_as_transitionend() {
     let changed = click(&mut host, target);
     let animation = started(&changed).remove(0);
 
-    host.dispatch(HostEvent {
-        node_id: target.0,
-        handler_id: 0,
-        payload: EventPayload::AnimationEvent {
+    host.dispatch(HostEvent::new(
+        target.0,
+        0,
+        EventPayload::AnimationEvent {
             animation_id: animation.animation_id,
             kind: AnimationEventKind::End,
             property: AnimatedProperty::Alpha,
@@ -222,7 +219,7 @@ fn fr34_2_the_end_of_a_transition_reaches_the_page_as_transitionend() {
             elapsed_ms: 500.0,
             time_nanos: 1,
         },
-    })
+    ))
     .expect("the event is dispatched");
     SEEN.with(|seen| {
         let seen = seen.borrow();
@@ -341,10 +338,10 @@ fn fr34_2_a_transform_animation_is_sent_in_degrees_and_its_moments_come_back() {
         (AnimationEventKind::Active, 0.0),
         (AnimationEventKind::End, 1000.0),
     ] {
-        host.dispatch(HostEvent {
-            node_id: animation.node_id,
-            handler_id: 0,
-            payload: EventPayload::AnimationEvent {
+        host.dispatch(HostEvent::new(
+            animation.node_id,
+            0,
+            EventPayload::AnimationEvent {
                 animation_id: animation.animation_id,
                 kind,
                 property: AnimatedProperty::Transform,
@@ -353,7 +350,7 @@ fn fr34_2_a_transform_animation_is_sent_in_degrees_and_its_moments_come_back() {
                 elapsed_ms,
                 time_nanos: 1,
             },
-        })
+        ))
         .expect("the event is dispatched");
     }
     SPINS.with(|spins| {
@@ -490,10 +487,10 @@ fn watched() -> Element {
 }
 
 fn renderer_says(host: &mut Host, node_id: u32, animation_id: u32, kind: AnimationEventKind) {
-    host.dispatch(HostEvent {
+    host.dispatch(HostEvent::new(
         node_id,
-        handler_id: 0,
-        payload: EventPayload::AnimationEvent {
+        0,
+        EventPayload::AnimationEvent {
             animation_id,
             kind,
             property: AnimatedProperty::Alpha,
@@ -502,7 +499,7 @@ fn renderer_says(host: &mut Host, node_id: u32, animation_id: u32, kind: Animati
             elapsed_ms: 0.0,
             time_nanos: 1,
         },
-    })
+    ))
     .expect("the event is dispatched");
 }
 
@@ -735,4 +732,277 @@ fn fr34_2_no_animationcancel_after_the_animation_ended() {
     );
     click(&mut host, target);
     assert_eq!(moments(), vec!["end pulse 0 []"]);
+}
+
+const COLOR_SEND_CSS: &str = r#"
+html, body { margin: 0; padding: 0; }
+#ink { width: 100px; height: 30px; color: rgb(255, 0, 0); transition: color 0.5s linear; }
+@keyframes glow { from { color: rgb(255, 0, 0); } to { color: rgb(0, 0, 255); } }
+#glow { width: 100px; height: 30px; animation: glow 1s linear infinite; }
+"#;
+
+fn color_send_config() -> HtmlConfig {
+    HtmlConfig {
+        stylesheets: vec![COLOR_SEND_CSS.to_string()],
+        measurer: Some(Box::new(FixedAdvance)),
+        ..HtmlConfig::default()
+    }
+}
+
+fn color_send_app() -> Element {
+    let mut presses = use_signal(|| 0u32);
+    let color = if presses() % 2 == 1 {
+        "rgb(0, 0, 255)"
+    } else {
+        "rgb(255, 0, 0)"
+    };
+    rsx! {
+        div {
+            id: "ink",
+            style: "color: {color}",
+            onclick: move |_| presses += 1,
+            ontransitionend: move |event| {
+                SEEN.with(|seen| {
+                    seen.borrow_mut().push(format!("{:?}", event.data()));
+                });
+            },
+            "Hello"
+            span { style: "color: rgb(0, 128, 0)", "Fixed" }
+        }
+        div { id: "glow", "Pulse" }
+    }
+}
+
+fn last_color_prop(batch: &[Mutation<'static>], node: u32) -> Option<PropertyValue<'static>> {
+    batch.iter().rev().find_map(|mutation| match mutation {
+        Mutation::SetProp {
+            node_id,
+            property: PropertyKind::Color,
+            value,
+        } if *node_id == node => Some(value.clone()),
+        _ => None,
+    })
+}
+
+fn text_children(batch: &[Mutation<'static>], parent: u32) -> Vec<u32> {
+    let text_nodes: Vec<u32> = batch
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::Create {
+                node_id,
+                widget: WidgetKind::Text,
+            } => Some(*node_id),
+            _ => None,
+        })
+        .collect();
+    batch
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::Insert {
+                parent_id, node_id, ..
+            } if *parent_id == parent && text_nodes.contains(node_id) => Some(*node_id),
+            _ => None,
+        })
+        .collect()
+}
+
+/// `color` transitions and `@keyframes` animations reach the renderer as `StartAnimation`
+/// records with `AnimatedProperty::Color` and premultiplied sRGB interpolation, setting the
+/// container's `Color` property so inheriting text children follow it without per-frame Host
+/// work.
+#[test]
+fn fr34_2_a_color_transition_and_keyframes_animation_are_sent_to_the_renderer() {
+    SEEN.with(|seen| seen.borrow_mut().clear());
+    let mut host = Host::html(color_send_app, color_send_config);
+    let first = owned(host.rebuild().unwrap());
+    let target = clickable(&first);
+
+    let initial = started(&first);
+    assert_eq!(
+        initial.len(),
+        1,
+        "one keyframes color animation: {first:#?}"
+    );
+    let glow = &initial[0];
+    assert_eq!(glow.property, AnimatedProperty::Color);
+    assert_eq!(glow.slot, 1);
+    assert_eq!(glow.duration_ms, 1000.0);
+    assert!(glow.iterations.is_infinite());
+    assert_eq!(
+        glow.interpolation,
+        Some(ColorInterpolation::SrgbPremultiplied)
+    );
+    assert_eq!(glow.keyframes.len(), 2);
+    assert_eq!(
+        glow.keyframes[0].value,
+        KeyframeValue::Paint(Paint::Literal(Color::argb(0xFFFF_0000)))
+    );
+    assert_eq!(
+        glow.keyframes[1].value,
+        KeyframeValue::Paint(Paint::Literal(Color::argb(0xFF00_00FF)))
+    );
+    assert_eq!(
+        last_color_prop(&first, glow.node_id),
+        Some(PropertyValue::Integer(
+            Paint::Literal(Color::argb(0xFFFF_0000)).to_bits() as i64
+        )),
+        "the animated container carries its steady colour: {first:#?}"
+    );
+    let glow_texts = text_children(&first, glow.node_id);
+    assert_eq!(
+        glow_texts.len(),
+        1,
+        "one text child inside #glow: {first:#?}"
+    );
+    assert_eq!(
+        last_color_prop(&first, glow_texts[0]),
+        None,
+        "inheriting text omits its own Color prop so it follows the container's animation"
+    );
+
+    let changed = click(&mut host, target);
+    let sent = started(&changed);
+    assert_eq!(sent.len(), 1, "one color transition: {changed:#?}");
+    let trans = &sent[0];
+    assert_eq!(trans.node_id, target.0);
+    assert_eq!(trans.property, AnimatedProperty::Color);
+    assert_eq!(trans.slot, 0);
+    assert_eq!(trans.duration_ms, 500.0);
+    assert_eq!(
+        trans.interpolation,
+        Some(ColorInterpolation::SrgbPremultiplied)
+    );
+    assert!(trans.keyframes[0].from_presented);
+    assert_eq!(
+        trans.keyframes[0].value,
+        KeyframeValue::Paint(Paint::Literal(Color::argb(0xFFFF_0000)))
+    );
+    assert_eq!(
+        trans.keyframes[1].value,
+        KeyframeValue::Paint(Paint::Literal(Color::argb(0xFF00_00FF)))
+    );
+    assert_eq!(
+        last_color_prop(&changed, target.0),
+        Some(PropertyValue::Integer(
+            Paint::Literal(Color::argb(0xFF00_00FF)).to_bits() as i64
+        )),
+        "the container holds the target colour: {changed:#?}"
+    );
+
+    host.dispatch(HostEvent::new(
+        target.0,
+        0,
+        EventPayload::AnimationEvent {
+            animation_id: trans.animation_id,
+            kind: AnimationEventKind::End,
+            property: AnimatedProperty::Color,
+            slot: 0,
+            iteration: 0,
+            elapsed_ms: 500.0,
+            time_nanos: 1,
+        },
+    ))
+    .expect("the event is dispatched");
+    SEEN.with(|seen| {
+        let seen = seen.borrow();
+        assert_eq!(seen.len(), 1, "{seen:?}");
+        assert!(seen[0].contains("property_name: \"color\""), "{seen:?}");
+        assert!(seen[0].contains("elapsed_time: 0.5"), "{seen:?}");
+    });
+}
+
+const RUNTIME_REDUCED_CSS: &str = r#"
+html, body { margin: 0; padding: 0; }
+#reduced_fade { width: 100px; height: 50px; opacity: 1; transition: opacity 0.5s linear; }
+@media (prefers-reduced-motion: reduce) { #reduced_fade { transition: none; } }
+@keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+#reduced_spin { width: 40px; height: 40px; }
+@media (prefers-reduced-motion: no-preference) { #reduced_spin { animation: spin 1s linear infinite; } }
+"#;
+
+fn runtime_reduced_config() -> HtmlConfig {
+    HtmlConfig {
+        stylesheets: vec![RUNTIME_REDUCED_CSS.to_string()],
+        measurer: Some(Box::new(FixedAdvance)),
+        ..HtmlConfig::default()
+    }
+}
+
+fn runtime_reduced_app() -> Element {
+    let mut presses = use_signal(|| 0u32);
+    let opacity = if presses() % 2 == 1 { "0.25" } else { "1" };
+    rsx! {
+        div {
+            id: "reduced_fade",
+            style: "opacity: {opacity}",
+            onclick: move |_| presses += 1,
+        }
+        div { id: "reduced_spin" }
+    }
+}
+
+/// `EventPayload::ReducedMotionChanged` updates `@media (prefers-reduced-motion: ...)` on a
+/// live `HtmlRuntime`: turning it on cancels active `no-preference` animations and disables
+/// `reduce`-guarded transitions, and turning it off restores them.
+#[test]
+fn fr34_2_runtime_reduced_motion_event_updates_prefers_reduced_motion_rules() {
+    let mut host = Host::html(runtime_reduced_app, runtime_reduced_config);
+    let first = owned(host.rebuild().unwrap());
+    let target = clickable(&first);
+    let initial = started(&first);
+    assert_eq!(
+        initial.len(),
+        1,
+        "spin starts when reduced motion is off: {first:#?}"
+    );
+    let spin = &initial[0];
+
+    let (reduced_batch, _) = host
+        .dispatch(HostEvent::new(
+            0,
+            0,
+            EventPayload::ReducedMotionChanged(ReducedMotion::On),
+        ))
+        .expect("reduced motion event is dispatched");
+    let reduced = owned(reduced_batch);
+    let cancelled: Vec<_> = reduced
+        .iter()
+        .filter_map(|mutation| match mutation {
+            Mutation::ControlAnimation {
+                node_id,
+                animation_id,
+                op,
+                ..
+            } => Some((*node_id, *animation_id, *op)),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        cancelled,
+        vec![(spin.node_id, spin.animation_id, AnimationControl::Cancel)],
+        "turning reduced motion on cancels the no-preference loop: {reduced:#?}"
+    );
+
+    let toggled = click(&mut host, target);
+    assert!(
+        started(&toggled).is_empty(),
+        "transition: none under prefers-reduced-motion: reduce starts no transition: {toggled:#?}"
+    );
+
+    let (restored_batch, _) = host
+        .dispatch(HostEvent::new(
+            0,
+            0,
+            EventPayload::ReducedMotionChanged(ReducedMotion::Off),
+        ))
+        .expect("reduced motion off event is dispatched");
+    let restored = owned(restored_batch);
+    let restarted = started(&restored);
+    assert_eq!(
+        restarted.len(),
+        1,
+        "turning reduced motion off restores the no-preference loop: {restored:#?}"
+    );
+    assert_eq!(restarted[0].node_id, spin.node_id);
+    assert_eq!(restarted[0].property, AnimatedProperty::Transform);
 }

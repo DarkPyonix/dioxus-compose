@@ -248,6 +248,70 @@ pub struct TextRun {
     pub spans: Vec<SpanRun>,
 }
 
+impl TextRun {
+    /// The DOM element at `(px, py)` inside this run: the owner of the interactive span
+    /// covering that position, or [`TextRun::owner`] when no span claims it.
+    pub(crate) fn hit_owner(&self, px: f32, py: f32) -> NodeId {
+        if !self.spans.iter().any(|span| span.owner.is_some()) {
+            return self.owner;
+        }
+        let Some(byte_at) = self.byte_offset_at(px, py) else {
+            return self.owner;
+        };
+        self.spans
+            .iter()
+            .find(|span| span.owner.is_some() && byte_at >= span.start && byte_at < span.end)
+            .and_then(|span| span.owner)
+            .unwrap_or(self.owner)
+    }
+
+    fn byte_offset_at(&self, px: f32, py: f32) -> Option<usize> {
+        if self.text.is_empty() || self.rect.width <= 0.0 || self.rect.height <= 0.0 {
+            return None;
+        }
+        let total_lines = self.line_count.max(1) as usize;
+        let line_height = self.rect.height / total_lines as f32;
+        let line_idx =
+            (((py - self.rect.y) / line_height).floor().max(0.0) as usize).min(total_lines - 1);
+        let frac_x = ((px - self.rect.x) / self.rect.width).clamp(0.0, 1.0);
+
+        if total_lines > 1 && self.text.contains('\n') {
+            let mut lines = Vec::new();
+            let mut start = 0;
+            for part in self.text.split('\n') {
+                lines.push((start, part));
+                start += part.len() + 1;
+            }
+            if lines.len() == total_lines {
+                let (line_start, slice) = lines[line_idx];
+                let count = slice.chars().count();
+                if count == 0 {
+                    return Some(line_start);
+                }
+                let char_idx = ((frac_x * count as f32).floor() as usize).min(count - 1);
+                let rel = slice
+                    .char_indices()
+                    .nth(char_idx)
+                    .map(|(byte, _)| byte)
+                    .unwrap_or(0);
+                return Some(line_start + rel);
+            }
+        }
+
+        let total_chars = self.text.chars().count();
+        if total_chars == 0 {
+            return None;
+        }
+        let char_idx = if total_lines == 1 {
+            ((frac_x * total_chars as f32).floor() as usize).min(total_chars - 1)
+        } else {
+            let line_frac = (line_idx as f32 + frac_x) / total_lines as f32;
+            ((line_frac * total_chars as f32).floor() as usize).min(total_chars - 1)
+        };
+        self.text.char_indices().nth(char_idx).map(|(byte, _)| byte)
+    }
+}
+
 /// How a [`TextRun`] relates to the list marker of a `display: list-item` element.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub enum RunMarker {
@@ -431,11 +495,17 @@ pub enum ObjectFit {
     ScaleDown,
 }
 
-/// The image an `<img>` element shows.
+/// The image an `<img>` element, or an inline `<svg>`, shows.
 #[derive(Clone, Debug, PartialEq)]
 pub struct ReplacedImage {
     /// The `src`: as written, resolved against the document's base URL when there is one.
+    /// Empty for an inline `<svg>`, which carries its picture in
+    /// [`inline_svg`](Self::inline_svg).
     pub source: String,
+    /// The markup of an inline `<svg>` element and everything inside it, with the SVG
+    /// namespace on the root and every `currentColor` written as the colour of the element
+    /// that uses it. It is drawn in place of `source`. `None` for an `<img>`.
+    pub inline_svg: Option<String>,
     pub alt: Option<String>,
     /// The content box, which the image is clipped to.
     pub content_rect: Rect,
@@ -447,6 +517,8 @@ pub struct ReplacedImage {
     /// What the application's [`ImageResolver`](crate::html::ImageResolver) answered for the
     /// image's natural size during layout, if anything.
     pub natural_size: Option<(f32, f32)>,
+    /// The element's computed CSS `color`, which `currentColor` in an SVG image takes.
+    pub color: Rgba,
     /// What the element shows when the plan has no picture to draw for it: present for an
     /// image with no natural size and a non-empty `alt`.
     pub fallback: Option<ImageFallback>,
@@ -711,6 +783,322 @@ pub(crate) fn bounds_of(points: &[(f32, f32); 4]) -> Rect {
     Rect::new(min.0, min.1, max.0 - min.0, max.1 - min.1)
 }
 
+/// A 4x4 matrix in the order of CSS `matrix3d()`: column-major, so the element in `row` of
+/// `column` is `self.0[4 * column + row]`. A point `(x, y, z, 1)` goes to `M * (x, y, z,
+/// 1)`, and where it is drawn is the first two results divided by the fourth.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Matrix3D(pub [f32; 16]);
+
+impl Matrix3D {
+    pub const IDENTITY: Matrix3D = Matrix3D([
+        1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ]);
+
+    pub const fn translation(x: f32, y: f32, z: f32) -> Self {
+        Matrix3D([
+            1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, x, y, z, 1.0,
+        ])
+    }
+
+    pub const fn scaling(x: f32, y: f32, z: f32) -> Self {
+        Matrix3D([
+            x, 0.0, 0.0, 0.0, 0.0, y, 0.0, 0.0, 0.0, 0.0, z, 0.0, 0.0, 0.0, 0.0, 1.0,
+        ])
+    }
+
+    /// `rotate3d(x, y, z, angle)`: a turn of `radians` about the axis `(x, y, z)`, which
+    /// need not be a unit vector. An axis of no length turns nothing.
+    pub fn rotation(x: f32, y: f32, z: f32, radians: f32) -> Self {
+        let length = (x * x + y * y + z * z).sqrt();
+        if length == 0.0 || !length.is_finite() {
+            return Matrix3D::IDENTITY;
+        }
+        let (x, y, z) = (x / length, y / length, z / length);
+        let (half_sin, half_cos) = (radians / 2.0).sin_cos();
+        let sc = half_sin * half_cos;
+        let sq = half_sin * half_sin;
+        Matrix3D([
+            1.0 - 2.0 * (y * y + z * z) * sq,
+            2.0 * (x * y * sq + z * sc),
+            2.0 * (x * z * sq - y * sc),
+            0.0,
+            2.0 * (x * y * sq - z * sc),
+            1.0 - 2.0 * (x * x + z * z) * sq,
+            2.0 * (y * z * sq + x * sc),
+            0.0,
+            2.0 * (x * z * sq + y * sc),
+            2.0 * (y * z * sq - x * sc),
+            1.0 - 2.0 * (x * x + y * y) * sq,
+            0.0,
+            0.0,
+            0.0,
+            0.0,
+            1.0,
+        ])
+    }
+
+    /// `perspective(depth)`: the viewer is `depth` CSS pixels in front of the plane. CSS
+    /// takes a depth under one pixel as one pixel, and a depth that is not finite
+    /// (`perspective(none)`) as no perspective.
+    pub fn perspective(depth: f32) -> Self {
+        if !depth.is_finite() {
+            return Matrix3D::IDENTITY;
+        }
+        let mut matrix = Matrix3D::IDENTITY;
+        matrix.0[11] = -1.0 / depth.max(1.0);
+        matrix
+    }
+
+    /// The 2D matrix as a 4x4 one that leaves z alone.
+    pub const fn from_2d(matrix: &Matrix2D) -> Self {
+        Matrix3D([
+            matrix.a, matrix.b, 0.0, 0.0, matrix.c, matrix.d, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0,
+            matrix.e, matrix.f, 0.0, 1.0,
+        ])
+    }
+
+    /// `self` times `rhs`: `rhs` is applied to a point first, then `self`, which is how a
+    /// CSS transform list composes.
+    pub fn times(&self, rhs: &Matrix3D) -> Matrix3D {
+        let mut out = [0.0f32; 16];
+        for column in 0..4 {
+            for row in 0..4 {
+                let mut sum = 0.0;
+                for k in 0..4 {
+                    sum += self.0[4 * k + row] * rhs.0[4 * column + k];
+                }
+                out[4 * column + row] = sum;
+            }
+        }
+        Matrix3D(out)
+    }
+
+    pub fn determinant(&self) -> f32 {
+        let at = |row: usize, column: usize| self.0[4 * column + row];
+        let s0 = at(0, 0) * at(1, 1) - at(1, 0) * at(0, 1);
+        let s1 = at(0, 0) * at(1, 2) - at(1, 0) * at(0, 2);
+        let s2 = at(0, 0) * at(1, 3) - at(1, 0) * at(0, 3);
+        let s3 = at(0, 1) * at(1, 2) - at(1, 1) * at(0, 2);
+        let s4 = at(0, 1) * at(1, 3) - at(1, 1) * at(0, 3);
+        let s5 = at(0, 2) * at(1, 3) - at(1, 2) * at(0, 3);
+        let c5 = at(2, 2) * at(3, 3) - at(3, 2) * at(2, 3);
+        let c4 = at(2, 1) * at(3, 3) - at(3, 1) * at(2, 3);
+        let c3 = at(2, 1) * at(3, 2) - at(3, 1) * at(2, 2);
+        let c2 = at(2, 0) * at(3, 3) - at(3, 0) * at(2, 3);
+        let c1 = at(2, 0) * at(3, 2) - at(3, 0) * at(2, 2);
+        let c0 = at(2, 0) * at(3, 1) - at(3, 0) * at(2, 1);
+        s0 * c5 - s1 * c4 + s2 * c3 + s3 * c2 - s4 * c1 + s5 * c0
+    }
+
+    /// What the matrix does to the plane z = 0, which is all a flat box has: the nine
+    /// entries that do not involve z.
+    pub fn plane(&self) -> PlaneMap {
+        let m = &self.0;
+        PlaneMap {
+            rows: [
+                [m[0], m[4], m[12]],
+                [m[1], m[5], m[13]],
+                [m[3], m[7], m[15]],
+            ],
+        }
+    }
+
+    /// Whether the matrix turns the back of a flat box towards the viewer: the box's
+    /// normal, carried through the matrix, points away. A matrix with no inverse shows
+    /// neither face, so this is false for it.
+    pub fn shows_back(&self) -> bool {
+        // The z of the transformed normal is the cofactor of the z diagonal entry over the
+        // determinant, and that cofactor is the determinant of the plane map. Only the
+        // sign matters, so the two are multiplied instead of divided.
+        self.plane().determinant() * self.determinant() < 0.0
+    }
+
+    /// Each component moved `progress` of the way to `other`'s.
+    pub fn lerp(&self, other: &Matrix3D, progress: f32) -> Matrix3D {
+        let mut out = self.0;
+        for (value, to) in out.iter_mut().zip(other.0.iter()) {
+            *value += (*to - *value) * progress;
+        }
+        Matrix3D(out)
+    }
+}
+
+/// How a transform carries the points of a flat box to where they are drawn: a 2D affine
+/// matrix, or a 3D one with its perspective, seen as a map of the plane.
+///
+/// A point `(x, y)` goes to `(rows[0] . p, rows[1] . p) / (rows[2] . p)` with `p = (x, y,
+/// 1)`. The divisor is how far in front of the viewer the point is, as a share of the
+/// perspective depth: a point where it is not positive is behind the viewer and is drawn
+/// nowhere.
+///
+/// A box without `transform-style: preserve-3d` is drawn flat into its parent's plane, so
+/// the maps of nested boxes multiply like matrices do.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PlaneMap {
+    pub rows: [[f32; 3]; 3],
+}
+
+impl PlaneMap {
+    pub const IDENTITY: PlaneMap = PlaneMap {
+        rows: [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]],
+    };
+
+    pub const fn translation(x: f32, y: f32) -> Self {
+        PlaneMap {
+            rows: [[1.0, 0.0, x], [0.0, 1.0, y], [0.0, 0.0, 1.0]],
+        }
+    }
+
+    /// `self` times `rhs`: `rhs` is applied to a point first, then `self`.
+    pub fn times(&self, rhs: &PlaneMap) -> PlaneMap {
+        let mut rows = [[0.0f32; 3]; 3];
+        for (row, out) in rows.iter_mut().enumerate() {
+            for (column, value) in out.iter_mut().enumerate() {
+                *value = (0..3)
+                    .map(|k| self.rows[row][k] * rhs.rows[k][column])
+                    .sum();
+            }
+        }
+        PlaneMap { rows }
+    }
+
+    /// Where the point is drawn; `None` for a point behind the viewer.
+    pub fn apply(&self, x: f32, y: f32) -> Option<(f32, f32)> {
+        let [a, b, c] = self.rows;
+        let w = c[0] * x + c[1] * y + c[2];
+        if w.is_nan() || w <= 1e-6 {
+            return None;
+        }
+        Some((
+            (a[0] * x + a[1] * y + a[2]) / w,
+            (b[0] * x + b[1] * y + b[2]) / w,
+        ))
+    }
+
+    pub fn determinant(&self) -> f32 {
+        let [a, b, c] = self.rows;
+        a[0] * (b[1] * c[2] - b[2] * c[1]) - a[1] * (b[0] * c[2] - b[2] * c[0])
+            + a[2] * (b[0] * c[1] - b[1] * c[0])
+    }
+
+    /// The map that undoes this one; `None` when it flattens the plane to a line or a
+    /// point (a scale by zero, a box seen edge on), which has no inverse.
+    ///
+    /// The inverse keeps the sign of the divisor: applied to a point of the screen, it
+    /// answers `None` where the plane behind that point is behind the viewer.
+    pub fn inverse(&self) -> Option<PlaneMap> {
+        let det = self.determinant();
+        if det.abs() < 1e-12 || !det.is_finite() {
+            return None;
+        }
+        let [a, b, c] = self.rows;
+        Some(PlaneMap {
+            rows: [
+                [
+                    (b[1] * c[2] - b[2] * c[1]) / det,
+                    (a[2] * c[1] - a[1] * c[2]) / det,
+                    (a[1] * b[2] - a[2] * b[1]) / det,
+                ],
+                [
+                    (b[2] * c[0] - b[0] * c[2]) / det,
+                    (a[0] * c[2] - a[2] * c[0]) / det,
+                    (a[2] * b[0] - a[0] * b[2]) / det,
+                ],
+                [
+                    (b[0] * c[1] - b[1] * c[0]) / det,
+                    (a[1] * c[0] - a[0] * c[1]) / det,
+                    (a[0] * b[1] - a[1] * b[0]) / det,
+                ],
+            ],
+        })
+    }
+
+    /// Where the four corners of `rect` (top-left, top-right, bottom-right, bottom-left)
+    /// are drawn; `None` when one of them is behind the viewer.
+    pub fn corners(&self, rect: &Rect) -> Option<[(f32, f32); 4]> {
+        Some([
+            self.apply(rect.x, rect.y)?,
+            self.apply(rect.right(), rect.y)?,
+            self.apply(rect.right(), rect.bottom())?,
+            self.apply(rect.x, rect.bottom())?,
+        ])
+    }
+
+    /// The smallest axis-aligned rectangle that holds the drawn `rect`. A rectangle that
+    /// reaches behind the viewer has no bounds, so it is answered with one far larger than
+    /// any page.
+    pub fn bounds(&self, rect: &Rect) -> Rect {
+        const FAR: f32 = 1.0e7;
+        match self.corners(rect) {
+            Some(corners) => bounds_of(&corners),
+            None => Rect::new(-FAR, -FAR, 2.0 * FAR, 2.0 * FAR),
+        }
+    }
+}
+
+impl From<Matrix2D> for PlaneMap {
+    fn from(matrix: Matrix2D) -> Self {
+        PlaneMap {
+            rows: [
+                [matrix.a, matrix.c, matrix.e],
+                [matrix.b, matrix.d, matrix.f],
+                [0.0, 0.0, 1.0],
+            ],
+        }
+    }
+}
+
+/// A box's 3D `transform`: the one matrix its `translate`, `rotate`, `scale` and
+/// `transform` multiply out to, 2D functions included, and the point it is applied about
+/// (`transform-origin`).
+///
+/// A `perspective()` in the list is inside the matrix. The origin is measured from the
+/// box's own top-left corner, in CSS pixels, and lies in the box's plane: a depth given to
+/// `transform-origin` is folded into the matrix. Like a 2D transform, it moves how the box
+/// and everything inside it is drawn, and nothing about layout.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Transform3D {
+    pub matrix: Matrix3D,
+    pub origin: (f32, f32),
+    /// `backface-visibility: hidden`: the box is not drawn, and takes no pointer, while
+    /// its back is turned to the viewer.
+    pub backface_hidden: bool,
+}
+
+impl Transform3D {
+    /// The matrix about the origin, in the coordinates of the box's own top-left corner.
+    pub fn about_origin(&self) -> Matrix3D {
+        Matrix3D::translation(self.origin.0, self.origin.1, 0.0)
+            .times(&self.matrix)
+            .times(&Matrix3D::translation(-self.origin.0, -self.origin.1, 0.0))
+    }
+
+    /// The transform as a map of document coordinates, for the box whose untransformed
+    /// border box is `rect`.
+    pub fn in_document(&self, rect: &Rect) -> PlaneMap {
+        PlaneMap::translation(rect.x, rect.y)
+            .times(&self.about_origin().plane())
+            .times(&PlaneMap::translation(-rect.x, -rect.y))
+    }
+
+    /// Where the four corners of `rect` (top-left, top-right, bottom-right, bottom-left)
+    /// are drawn; `None` when one of them is behind the viewer.
+    pub fn corners(&self, rect: &Rect) -> Option<[(f32, f32); 4]> {
+        self.in_document(rect).corners(rect)
+    }
+
+    /// Whether the box's back is turned to the viewer.
+    pub fn faces_away(&self) -> bool {
+        self.matrix.shows_back()
+    }
+
+    /// Whether the box is left undrawn: its back is turned and `backface-visibility` is
+    /// `hidden`.
+    pub fn is_hidden(&self) -> bool {
+        self.backface_hidden && self.faces_away()
+    }
+}
+
 /// A property a renderer can play an animation of by itself, because its value changes
 /// nothing about layout.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -718,6 +1106,7 @@ pub enum AnimatedProperty {
     /// A box's own `opacity` (not multiplied by its ancestors').
     Opacity,
     Transform,
+    Color,
     BackgroundColor,
 }
 
@@ -835,13 +1224,23 @@ pub struct TransitionStart {
     pub animation: Animation,
 }
 
-/// A `transform` the display list could not carry, so the box is drawn without it.
+/// A motion of `transform` that is not played because it passes through a 3D transform: a
+/// renderer animates lists of 2D functions only. The box is drawn with the transform it
+/// rests at.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SkippedTransform {
     pub node: NodeId,
     pub tag: String,
-    /// The transform as CSS writes it.
+    /// The motion as CSS writes it: the `@keyframes` block, or the transition.
     pub transform: String,
+}
+
+/// An element with `transform-style: preserve-3d`. Its children do not share a 3D space:
+/// each is drawn flat into the element's plane, as with `transform-style: flat`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlattenedSpace {
+    pub node: NodeId,
+    pub tag: String,
 }
 
 /// Everything one node contributes to the picture.
@@ -881,11 +1280,19 @@ pub struct NodeEntry {
     pub clips_children: bool,
     /// The product of this box's `opacity` and every ancestor's.
     pub opacity: f32,
+    /// The box's computed CSS `color`, or the rest value of a running `color` `@keyframes`
+    /// animation.
+    pub color: Rgba,
     /// The box's 2D `transform`, which also carries every box inside it. `None` for no
     /// transform, and for one that only moves the box: a translation is folded into
     /// [`NodeEntry::rect`] (unless an animation or transition of `transform` is declared,
     /// which keeps it here so a renderer can play it).
     pub transform: Option<Transform2D>,
+    /// The box's 3D `transform`, which also carries every box inside it: a transform with
+    /// a rotation about x or y, a move or scale in depth, a `perspective()` or a
+    /// `matrix3d()` that is not flat. A box has this or [`NodeEntry::transform`], never
+    /// both.
+    pub transform_3d: Option<Transform3D>,
     /// The animations of `@keyframes` this box is running that a renderer plays by itself.
     /// While one is listed, the entry's own value for the property it animates is the value
     /// the animation starts from, and the renderer replaces it as the animation plays.
@@ -937,8 +1344,35 @@ pub struct DisplayList {
     pub entries: Vec<NodeEntry>,
     /// The transitions this layout started, for a renderer to play.
     pub transitions: Vec<TransitionStart>,
-    /// The transforms this layout left out because they are 3D.
+    /// The motions of `transform` this layout does not play because they pass through a
+    /// 3D transform.
     pub skipped_transforms: Vec<SkippedTransform>,
+    /// The elements whose `transform-style: preserve-3d` is drawn flat.
+    pub flattened_spaces: Vec<FlattenedSpace>,
+}
+
+impl NodeEntry {
+    /// Whether the box is drawn through a transform, 2D or 3D.
+    pub fn is_transformed(&self) -> bool {
+        self.transform.is_some() || self.transform_3d.is_some()
+    }
+
+    /// The box's transform as a map of document coordinates, `None` when it has none.
+    pub fn drawn_map(&self) -> Option<PlaneMap> {
+        match (&self.transform, &self.transform_3d) {
+            (Some(transform), _) => Some(transform.in_document(&self.rect).into()),
+            (None, Some(transform)) => Some(transform.in_document(&self.rect)),
+            (None, None) => None,
+        }
+    }
+
+    /// Whether the box and everything in it is left undrawn because its back is turned to
+    /// the viewer and `backface-visibility` is `hidden`.
+    pub fn is_turned_away(&self) -> bool {
+        self.transform_3d
+            .as_ref()
+            .is_some_and(Transform3D::is_hidden)
+    }
 }
 
 /// What changed between two display lists.
@@ -1059,7 +1493,7 @@ impl DisplayList {
             .iter()
             .map(|entry| (entry.node, entry))
             .collect();
-        let transformed = self.entries.iter().any(|entry| entry.transform.is_some());
+        let transformed = self.entries.iter().any(NodeEntry::is_transformed);
         // Total scroll applied to content inside `container`, through every scrolling
         // ancestor up the chain.
         let accumulated = |mut container: Option<NodeId>| {
@@ -1111,7 +1545,7 @@ impl DisplayList {
                 continue;
             }
             if let Some(run) = entry.texts.iter().find(|run| run.rect.contains(px, py)) {
-                return Some(run.owner);
+                return Some(run.hit_owner(px, py));
             }
             return Some(entry.node);
         }
@@ -1121,8 +1555,10 @@ impl DisplayList {
     /// Where a point of the screen falls in the coordinates `node` was laid out in: the
     /// point with the `transform` of the box and of every box around it taken off. For a
     /// box nothing transforms this is the point itself. Scroll positions are taken as
-    /// zero. `None` for a node not in the list, and for a point inside a box that a
-    /// transform has flattened (`scale(0)`), which has no layout position.
+    /// zero. `None` for a node not in the list, for a point inside a box that a transform
+    /// has flattened (`scale(0)`), which has no layout position, for a point where a 3D
+    /// transform puts the box behind the viewer, and inside a box that is not drawn
+    /// because its hidden back face is turned to the viewer.
     pub fn local_point(&self, node: NodeId, x: f32, y: f32) -> Option<(f32, f32)> {
         let by_node: HashMap<NodeId, &NodeEntry> = self
             .entries
@@ -1134,7 +1570,8 @@ impl DisplayList {
     }
 
     /// Where the point `(x, y)`, given in the coordinates `node` was laid out in, is
-    /// drawn: the opposite of [`DisplayList::local_point`].
+    /// drawn: the opposite of [`DisplayList::local_point`]. `None` for a node not in the
+    /// list and for a point a 3D transform puts behind the viewer.
     pub fn project(&self, node: NodeId, x: f32, y: f32) -> Option<(f32, f32)> {
         let by_node: HashMap<NodeId, &NodeEntry> = self
             .entries
@@ -1148,8 +1585,8 @@ impl DisplayList {
             if !seen.insert(entry.node) {
                 break;
             }
-            if let Some(transform) = &entry.transform {
-                point = transform.in_document(&entry.rect).apply(point.0, point.1);
+            if let Some(map) = entry.drawn_map() {
+                point = map.apply(point.0, point.1)?;
             }
             current = entry
                 .parent
@@ -1199,9 +1636,11 @@ fn unproject<'a>(
         if is_entry {
             parent_content = current;
         }
-        if let Some(transform) = &above.transform {
-            let inverse = transform.in_document(&above.rect).inverse()?;
-            current = inverse.apply(current.0, current.1);
+        if above.is_turned_away() {
+            return None;
+        }
+        if let Some(map) = above.drawn_map() {
+            current = map.inverse()?.apply(current.0, current.1)?;
         }
         if !is_entry && above.scroll.is_some() {
             let (sx, sy) = scroll_offset(above.node);

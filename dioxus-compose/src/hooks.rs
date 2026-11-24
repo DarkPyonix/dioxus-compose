@@ -853,7 +853,7 @@ impl CodeEditorHandle {
     ///
     /// The snippet is written in the part of VS Code's syntax the editor reads: `$1`,
     /// `${1:placeholder}`, `${1|one,two|}`, `$0`, and `\$` for a dollar sign
-    /// (`compose_rust::code::escape_snippet_text` escapes plain text). The caret selects the
+    /// ([`crate::escape_snippet_text`] escapes plain text). The caret selects the
     /// first stop, Tab and Shift+Tab move between the stops, and the session ends at `$0`,
     /// on Escape or when the caret leaves the snippet. What it leaves arrives as ordinary
     /// changes and undoes as one step. Like [`edit`](Self::edit) it goes out with the batch
@@ -880,20 +880,18 @@ pub fn use_code_editor() -> CodeEditorHandle {
     dioxus_core::use_hook(CodeEditorHandle::new)
 }
 
-/// Hands every queued edit to `emit` and empties the queue.
-pub(crate) fn drain_edits(mut emit: impl FnMut(&EditorRequest)) {
+/// Offers every queued edit to `consume`, in order. An edit it answers `true` for leaves the
+/// queue; one it answers `false` for stays, ahead of any queued while it ran, for a later
+/// flush by the renderer that carries its editor.
+pub(crate) fn drain_edits_keeping(mut consume: impl FnMut(&EditorRequest) -> bool) {
     let mut taken = EDITS.with_borrow_mut(std::mem::take);
     if taken.is_empty() {
         return;
     }
-    for edit in &taken {
-        emit(edit);
-    }
-    taken.clear();
+    taken.retain(|edit| !consume(edit));
     EDITS.with_borrow_mut(|edits| {
-        if edits.is_empty() {
-            *edits = taken;
-        }
+        taken.append(edits);
+        *edits = taken;
     });
 }
 

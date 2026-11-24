@@ -116,10 +116,10 @@ fn page() -> Element {
 }
 
 fn window_event(width_dp: f32, height_dp: f32) -> HostEvent<'static> {
-    HostEvent {
-        node_id: 0,
-        handler_id: 0,
-        payload: EventPayload::WindowSizeChanged {
+    HostEvent::new(
+        0,
+        0,
+        EventPayload::WindowSizeChanged {
             width_dp,
             height_dp,
             class: WindowSizeClass::from_width_dp(width_dp),
@@ -127,16 +127,13 @@ fn window_event(width_dp: f32, height_dp: f32) -> HostEvent<'static> {
             safe_area_leading: 0.0,
             safe_area_top: 0.0,
             safe_area_trailing: 0.0,
+            safe_area_bottom: 0.0,
         },
-    }
+    )
 }
 
 fn zoom_event(k: f32, os: f32, level: i32) -> HostEvent<'static> {
-    HostEvent {
-        node_id: 0,
-        handler_id: 0,
-        payload: EventPayload::ZoomChanged { k, os, level },
-    }
+    HostEvent::new(0, 0, EventPayload::ZoomChanged { k, os, level })
 }
 
 /// What a batch said, owned, so it outlives the Host call it came from.
@@ -508,11 +505,7 @@ fn fr34_4_use_zoom_reads_the_report_and_sets_the_level() {
     );
 
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id: node,
-            handler_id: handler,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(node, handler, EventPayload::Clicked))
         .unwrap();
     assert_eq!(
         seen(batch).levels,
@@ -543,11 +536,7 @@ fn fr34_4_set_level_reaches_the_window_record() {
         "nothing asked at start"
     );
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id: node,
-            handler_id: handler,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(node, handler, EventPayload::Clicked))
         .unwrap();
     assert_eq!(seen(batch).levels, vec![Some(3)]);
 }
@@ -592,10 +581,10 @@ fn fr34_4_an_htmlview_names_the_zoom_and_lays_out_in_its_own_viewport() {
 
     // The box measures 420 units. Reported at 1.5 with no application zoom, its page is
     // 280 pixels wide.
-    let measured = HostEvent {
-        node_id: observed,
-        handler_id: 0,
-        payload: EventPayload::WindowSizeChanged {
+    let measured = HostEvent::new(
+        observed,
+        0,
+        EventPayload::WindowSizeChanged {
             width_dp: 420.0,
             height_dp: 200.0,
             class: WindowSizeClass::from_width_dp(420.0),
@@ -603,8 +592,9 @@ fn fr34_4_an_htmlview_names_the_zoom_and_lays_out_in_its_own_viewport() {
             safe_area_leading: 0.0,
             safe_area_top: 0.0,
             safe_area_trailing: 0.0,
+            safe_area_bottom: 0.0,
         },
-    };
+    );
     // A widget app's Host answers the zoom report itself, so it reaches the island with no
     // error from the widget path.
     let (batch, _) = host.dispatch(measured).unwrap();

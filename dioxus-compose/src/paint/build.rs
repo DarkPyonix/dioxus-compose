@@ -23,17 +23,17 @@ use crate::layout::background::{self, Boxes};
 use crate::layout::convert;
 use crate::layout::image::{BROKEN_IMAGE_ICON, ImageLookup};
 use crate::layout::{
-    button_content_offset, centres_content, inline_content_height, is_fixed, local,
+    button_content_offset, centres_content, inline_content_height, is_fixed, is_sticky, local,
 };
 use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, Border, BorderLine, BoxShadow, CanvasBackground,
-    Corners, DisplayList, ImageFallback, InputField, InputKind, MarkerShape, MeasuredAlt,
-    MeasuredMarker, MeasuredTexts, NodeEntry, Outline, PlayDirection, Radius, Rect, Rgba,
-    RunMarker, ScrollContainer, Sides, SkippedTransform, TextAlign, TextDecoration, TextRun,
-    Transform2D,
+    Corners, DisplayList, FlattenedSpace, ImageFallback, InputField, InputKind, MarkerShape,
+    MeasuredAlt, MeasuredMarker, MeasuredTexts, NodeEntry, Outline, PlayDirection, Radius, Rect,
+    Rgba, RunMarker, ScrollContainer, Sides, SkippedTransform, TextAlign, TextDecoration, TextRun,
+    Transform2D, Transform3D,
 };
 use crate::paint::motion::{AnimationRequest, Playback};
-use crate::paint::transform::{self, Moved};
+use crate::paint::transform::{self, Moved, Perspective};
 
 /// What the first walk settles for one box.
 struct Placed {
@@ -56,8 +56,12 @@ struct Placed {
     clips: bool,
     /// The 2D transform that is drawn on top of this box's place, unless it only translates.
     transform: Option<Transform2D>,
+    /// The 3D transform that is drawn on top of this box's place, when its transform is one.
+    transform_3d: Option<Transform3D>,
     /// The animations a renderer plays on this box.
     animations: Vec<Animation>,
+    /// The text colour a running animation starts from, in place of the cascade's.
+    color: Option<Rgba>,
     /// The background colour a running animation starts from, in place of the cascade's.
     background: Option<Rgba>,
 }
@@ -70,23 +74,36 @@ struct Ambient {
     clip: Option<Rect>,
     opacity: f32,
     scroll_parent: Option<NodeId>,
+    /// Viewport (padding box) of the nearest scroll ancestor in document coordinates,
+    /// paired with its current scroll offset `(scroll_x, scroll_y)` in CSS pixels.
+    scroll_viewport: Option<(Rect, (f32, f32))>,
+    /// Containing block for `position: sticky` clamping: the parent's content box, or the
+    /// scroll container's scrollable content bounds when the parent is a scroll container.
+    containing_block: Option<Rect>,
+    /// The parent's `perspective`, which its children's 3D transforms are seen through.
+    perspective: Option<Perspective>,
 }
 
 /// Reads a laid-out document into a display list. `playback` says which motions a renderer
 /// plays: with it, a box's `@keyframes` animations are listed on its entry and its
 /// transform is kept as one; without it the document is drawn as it is resolved.
+/// `scroll_offsets` carries each scroll container's current `(scroll_x, scroll_y)` in CSS
+/// pixels so `position: sticky` boxes clamp against their scroll viewport.
 pub(crate) fn build_display_list<'a>(
     doc: &'a BaseDocument,
     texts: &'a MeasuredTexts,
     images: &'a mut ImageLookup<'_>,
     playback: Option<&'a mut dyn Playback>,
+    scroll_offsets: &'a HashMap<NodeId, (f32, f32)>,
 ) -> DisplayList {
     let mut painter = Painter {
         doc,
         texts,
         images: RefCell::new(images),
         playback,
+        scroll_offsets,
         skipped: Vec::new(),
+        flattened: Vec::new(),
         placed: HashMap::new(),
         order: Vec::new(),
     };
@@ -100,6 +117,9 @@ pub(crate) fn build_display_list<'a>(
             clip: None,
             opacity: 1.0,
             scroll_parent: None,
+            scroll_viewport: None,
+            containing_block: None,
+            perspective: None,
         },
     );
     if painter.placed.contains_key(&root) {
@@ -131,6 +151,7 @@ pub(crate) fn build_display_list<'a>(
         entries,
         transitions: Vec::new(),
         skipped_transforms: painter.skipped,
+        flattened_spaces: painter.flattened,
     }
 }
 
@@ -141,8 +162,12 @@ struct Painter<'a, 'i> {
     images: RefCell<&'a mut ImageLookup<'i>>,
     /// Which motions a renderer plays, if the caller wants them described.
     playback: Option<&'a mut dyn Playback>,
-    /// The 3D transforms left out.
+    /// Current `(scroll_x, scroll_y)` in CSS pixels for each scroll container.
+    scroll_offsets: &'a HashMap<NodeId, (f32, f32)>,
+    /// The motions of `transform` that are not played because they pass through 3D.
     skipped: Vec<SkippedTransform>,
+    /// The elements whose `transform-style: preserve-3d` is drawn flat.
+    flattened: Vec<FlattenedSpace>,
     placed: HashMap<NodeId, Placed>,
     order: Vec<NodeId>,
 }
@@ -215,6 +240,67 @@ fn content_box(rect: &Rect, layout: &taffy::Layout) -> Rect {
     })
 }
 
+/// Clamps a `position: sticky` box's rectangle against its scroll container's visible
+/// viewport while keeping it inside its containing block `cb`.
+fn clamp_sticky(
+    mut rect: Rect,
+    style: &ComputedValues,
+    viewport: Rect,
+    (scroll_x, scroll_y): (f32, f32),
+    cb: Rect,
+) -> Rect {
+    let pos = style.get_position();
+    let resolve = |inset: &style::values::computed::Inset, basis: f32| -> Option<f32> {
+        match inset {
+            style::values::computed::Inset::LengthPercentage(lp) => {
+                Some(lp.resolve(Length::new(basis)).px())
+            }
+            _ => None,
+        }
+    };
+    let top = resolve(&pos.top, viewport.height);
+    let bottom = resolve(&pos.bottom, viewport.height);
+    let left = resolve(&pos.left, viewport.width);
+    let right = resolve(&pos.right, viewport.width);
+
+    let vis_top = viewport.y + scroll_y;
+    let vis_bottom = viewport.bottom() + scroll_y;
+    let vis_left = viewport.x + scroll_x;
+    let vis_right = viewport.right() + scroll_x;
+
+    let mut new_y = rect.y;
+    if let Some(bottom) = bottom {
+        let limit = (vis_bottom - bottom - rect.height).max(cb.y);
+        if limit < new_y {
+            new_y = limit;
+        }
+    }
+    if let Some(top) = top {
+        let limit = (vis_top + top).min(cb.bottom() - rect.height);
+        if limit > new_y {
+            new_y = limit;
+        }
+    }
+
+    let mut new_x = rect.x;
+    if let Some(right) = right {
+        let limit = (vis_right - right - rect.width).max(cb.x);
+        if limit < new_x {
+            new_x = limit;
+        }
+    }
+    if let Some(left) = left {
+        let limit = (vis_left + left).min(cb.right() - rect.width);
+        if limit > new_x {
+            new_x = limit;
+        }
+    }
+
+    rect.x = new_x;
+    rect.y = new_y;
+    rect
+}
+
 impl Painter<'_, '_> {
     fn place(&mut self, id: NodeId, parent: Option<NodeId>, ambient: Ambient) {
         // A copy of the shared reference, so nodes borrowed from it do not hold `self`.
@@ -268,23 +354,34 @@ impl Painter<'_, '_> {
             Some(AnimatedValue::Opacity(value)) => Some(value),
             _ => None,
         };
+        let animated_color = match rest(AnimatedProperty::Color) {
+            Some(AnimatedValue::Colour(colour)) => Some(colour),
+            _ => None,
+        };
         let animated_background = match rest(AnimatedProperty::BackgroundColor) {
             Some(AnimatedValue::Colour(colour)) => Some(colour),
             _ => None,
         };
-        let (shift_x, shift_y, transform) = match moved {
-            Moved::Nothing => (0.0, 0.0, None),
-            Moved::Translated(x, y) => (x, y, None),
-            Moved::Matrix(transform) => (0.0, 0.0, Some(transform)),
-            Moved::ThreeD(text) => {
-                self.skipped.push(SkippedTransform {
-                    node: id,
-                    tag: tag_of(),
-                    transform: text,
-                });
-                (0.0, 0.0, None)
-            }
+        let (shift_x, shift_y, transform, transform_3d) = match moved {
+            Moved::Nothing => (0.0, 0.0, None, None),
+            Moved::Translated(x, y) => (x, y, None, None),
+            Moved::Matrix(transform) => (0.0, 0.0, Some(transform), None),
+            Moved::ThreeD(transform) => (0.0, 0.0, None, Some(transform)),
         };
+        // Boxes inside a `preserve-3d` element would share its 3D space. Here each one is
+        // drawn flat into the element's plane, and the element is named so the developer
+        // can be told.
+        if style.as_ref().is_some_and(|style| {
+            matches!(
+                style.clone_transform_style(),
+                style::values::computed::TransformStyle::Preserve3d
+            )
+        }) {
+            self.flattened.push(FlattenedSpace {
+                node: id,
+                tag: tag_of(),
+            });
+        }
         let fixed = is_fixed(node);
         // A fixed box's location is in viewport coordinates already, and no ancestor's
         // clip or scroll position applies to it.
@@ -294,17 +391,40 @@ impl Painter<'_, '_> {
                 y: 0.0,
                 clip: None,
                 scroll_parent: None,
+                scroll_viewport: None,
+                containing_block: None,
                 ..ambient
             }
         } else {
             ambient
         };
-        let rect = Rect::new(
+        let mut rect = Rect::new(
             ambient.x + layout.location.x + shift_x,
             ambient.y + layout.location.y + shift_y,
             layout.size.width,
             layout.size.height,
         );
+        if is_sticky(node)
+            && let (Some((vp, scroll)), Some(cb), Some(style)) = (
+                ambient.scroll_viewport,
+                ambient.containing_block,
+                style.as_ref(),
+            )
+        {
+            rect = clamp_sticky(rect, style, vp, scroll, cb);
+        }
+        // The parent's perspective goes in front of this box's own 3D transform, inside
+        // the one matrix. Both are in document coordinates, so this holds wherever the box
+        // was placed.
+        let transform_3d = match (transform_3d, ambient.perspective) {
+            (Some(transform), Some(perspective)) => Some(transform::under_perspective(
+                transform,
+                &perspective,
+                rect.x,
+                rect.y,
+            )),
+            (transform, _) => transform,
+        };
 
         let own_opacity = animated_opacity
             .unwrap_or_else(|| style.as_ref().map_or(1.0, |style| style.clone_opacity()));
@@ -320,17 +440,32 @@ impl Painter<'_, '_> {
         // the rest also do in CSS; this display list does not carry them.)
         let context = match (positioned, z_index) {
             (true, Some(z)) => Some(z),
-            _ if own_opacity < 1.0 || transform.is_some() => Some(0),
+            _ if own_opacity < 1.0 || transform.is_some() || transform_3d.is_some() => Some(0),
             _ => None,
         };
         let opacity = ambient.opacity * own_opacity;
 
+        let own_content = content_box(&rect, layout);
         let mut inner = Ambient {
             x: rect.x,
             y: rect.y,
             clip: ambient.clip,
             opacity,
             scroll_parent: ambient.scroll_parent,
+            scroll_viewport: ambient.scroll_viewport,
+            containing_block: match node.data {
+                NodeData::AnonymousBlock(_) => ambient.containing_block,
+                _ => Some(own_content),
+            },
+            // A perspective is for the box's own children and goes no further down. An
+            // anonymous block is not an element, so what it wraps are still the children
+            // of the element above it.
+            perspective: match node.data {
+                NodeData::AnonymousBlock(_) => ambient.perspective,
+                _ => style.as_ref().and_then(|style| {
+                    transform::perspective_of(style, rect.x, rect.y, width, height)
+                }),
+            },
         };
         let own_clip = style.as_ref().is_some_and(|style| clips(style));
         if let Some(style) = style.as_ref() {
@@ -342,7 +477,11 @@ impl Painter<'_, '_> {
                 });
             }
             if scrolls(style.clone_overflow_x()) || scrolls(style.clone_overflow_y()) {
+                let padding = padding_box(&rect, layout);
+                let offset = self.scroll_offsets.get(&id).copied().unwrap_or((0.0, 0.0));
                 inner.scroll_parent = Some(id);
+                inner.scroll_viewport = Some((padding, offset));
+                inner.containing_block = Some(self.scroll_containing_block(id, &rect, own_content));
             }
         }
         drop(style);
@@ -374,10 +513,44 @@ impl Painter<'_, '_> {
                 fixed,
                 clips: own_clip,
                 transform,
+                transform_3d,
                 animations,
+                color: animated_color,
                 background: animated_background,
             },
         );
+    }
+
+    /// The containing block for a `position: sticky` direct child of a scroll container:
+    /// its scrollable content area (at least its own content box, extended to the furthest
+    /// in-flow child edge).
+    fn scroll_containing_block(&self, id: NodeId, scroller_rect: &Rect, content: Rect) -> Rect {
+        let Some(node) = self.doc.get_node(id) else {
+            return content;
+        };
+        let mut right = content.right();
+        let mut bottom = content.bottom();
+        for child in layout_children(node) {
+            let Some(child_node) = self.doc.get_node(child) else {
+                continue;
+            };
+            if !is_box(child_node) || is_fixed(child_node) {
+                continue;
+            }
+            let cl = &child_node.unrounded_layout;
+            let child_right =
+                scroller_rect.x + cl.location.x + cl.size.width + cl.margin.right.max(0.0);
+            let child_bottom =
+                scroller_rect.y + cl.location.y + cl.size.height + cl.margin.bottom.max(0.0);
+            right = right.max(child_right);
+            bottom = bottom.max(child_bottom);
+        }
+        Rect::new(
+            content.x,
+            content.y,
+            (right - content.x).max(content.width),
+            (bottom - content.y).max(content.height),
+        )
     }
 
     /// The size of what a scroll container scrolls, measured from its padding box's
@@ -522,6 +695,13 @@ impl Painter<'_, '_> {
             _ => element.name.local.to_string(),
         };
 
+        let style = node.primary_styles();
+        let color = placed.color.unwrap_or_else(|| {
+            style
+                .as_ref()
+                .map_or(Rgba::new(0, 0, 0, 255), |style| convert::text_color(style))
+        });
+
         let mut entry = NodeEntry {
             node: display_key(self.doc, node),
             tag,
@@ -540,7 +720,9 @@ impl Painter<'_, '_> {
             clip: placed.clip,
             clips_children: false,
             opacity: placed.opacity,
+            color,
             transform: placed.transform.clone(),
+            transform_3d: placed.transform_3d.clone(),
             animations: placed.animations.clone(),
             scroll: None,
             scroll_parent: placed.scroll_parent,
@@ -560,7 +742,6 @@ impl Painter<'_, '_> {
             image: None,
         };
 
-        let style = node.primary_styles();
         if let Some(style) = style.as_ref() {
             entry.visible = matches!(
                 style.clone_visibility(),

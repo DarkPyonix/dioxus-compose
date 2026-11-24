@@ -300,6 +300,19 @@ pub(crate) struct PointerState {
     pub(crate) kinds: RefCell<Option<HashMap<NodeId, u32>>>,
 }
 
+impl PointerState {
+    /// Drops removed nodes from hover, active and capture tracking so a later pointer
+    /// report never snapshots a dropped node or aliases a reused slab id.
+    pub(crate) fn prune_removed(&mut self, removed: &std::collections::HashSet<NodeId>) {
+        self.hover.retain(|id| !removed.contains(id));
+        self.active.retain(|id| !removed.contains(id));
+        self.captures.retain(|_, id| !removed.contains(id));
+        if self.released.is_some_and(|(_, id)| removed.contains(&id)) {
+            self.released = None;
+        }
+    }
+}
+
 /// For each node a `user-select` rule reaches: importance, specificity, position, value.
 type AuthorSelect = HashMap<NodeId, (bool, u32, usize, UserSelect)>;
 
@@ -562,10 +575,14 @@ impl HtmlDom {
         let next = self.element_chain(target);
         let previous = std::mem::take(&mut self.pointer.hover);
         for id in previous.iter().copied().filter(|id| !next.contains(id)) {
-            self.doc.snapshot_node_and(id, |node| node.unhover());
+            if self.doc.get_node(id).is_some() {
+                self.doc.snapshot_node_and(id, |node| node.unhover());
+            }
         }
         for id in next.iter().copied().filter(|id| !previous.contains(id)) {
-            self.doc.snapshot_node_and(id, |node| node.hover());
+            if self.doc.get_node(id).is_some() {
+                self.doc.snapshot_node_and(id, |node| node.hover());
+            }
         }
         self.pointer.restyle |= next != previous;
         self.pointer.hover = next;
@@ -575,10 +592,14 @@ impl HtmlDom {
         let next = self.element_chain(target);
         let previous = std::mem::take(&mut self.pointer.active);
         for id in previous.iter().copied().filter(|id| !next.contains(id)) {
-            self.doc.snapshot_node_and(id, |node| node.unactive());
+            if self.doc.get_node(id).is_some() {
+                self.doc.snapshot_node_and(id, |node| node.unactive());
+            }
         }
         for id in next.iter().copied().filter(|id| !previous.contains(id)) {
-            self.doc.snapshot_node_and(id, |node| node.active());
+            if self.doc.get_node(id).is_some() {
+                self.doc.snapshot_node_and(id, |node| node.active());
+            }
         }
         self.pointer.restyle |= next != previous;
         self.pointer.active = next;

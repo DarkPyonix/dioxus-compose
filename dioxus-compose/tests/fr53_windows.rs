@@ -190,11 +190,11 @@ fn fr53_window_element_opens_a_window() {
         .expect("Button OnClick handler should be registered");
 
     let (click_batch, _) = host
-        .dispatch(HostEvent {
-            node_id: button_id,
-            handler_id: click_handler,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(
+            button_id,
+            click_handler,
+            EventPayload::Clicked,
+        ))
         .expect("button click should dispatch");
     let click_mutations = decode_batch(click_batch).expect("click batch decodes");
 
@@ -235,11 +235,11 @@ fn fr53_window_element_opens_a_window() {
         .expect("second window must have OnWindowCloseRequested");
 
     let (close_batch, _) = host
-        .dispatch(HostEvent {
-            node_id: window_ids[1],
-            handler_id: second_close_handler,
-            payload: EventPayload::WindowCloseRequested,
-        })
+        .dispatch(HostEvent::new(
+            window_ids[1],
+            second_close_handler,
+            EventPayload::WindowCloseRequested,
+        ))
         .expect("close request should dispatch");
     let close_mutations = decode_batch(close_batch).expect("close batch decodes");
     assert!(
@@ -342,10 +342,10 @@ fn fr53_window_events_name_their_window() {
 
     // Resize only the second window.
     let (resize_batch, _) = host
-        .dispatch(HostEvent {
-            node_id: window_ids[1],
-            handler_id: 0,
-            payload: EventPayload::WindowSizeChanged {
+        .dispatch(HostEvent::new(
+            window_ids[1],
+            0,
+            EventPayload::WindowSizeChanged {
                 width_dp: 1280.0,
                 height_dp: 800.0,
                 class: WindowSizeClass::Expanded,
@@ -353,8 +353,9 @@ fn fr53_window_events_name_their_window() {
                 safe_area_leading: 0.0,
                 safe_area_top: 0.0,
                 safe_area_trailing: 0.0,
+                safe_area_bottom: 0.0,
             },
-        })
+        ))
         .expect("WindowSizeChanged for window 2 succeeds");
     let resize_mutations = decode_batch(resize_batch).expect("decodes");
     assert_eq!(
@@ -382,15 +383,15 @@ fn fr53_window_events_name_their_window() {
 
     // Change zoom on the second window.
     let (zoom_batch, _) = host
-        .dispatch(HostEvent {
-            node_id: window_ids[1],
-            handler_id: 0,
-            payload: EventPayload::ZoomChanged {
+        .dispatch(HostEvent::new(
+            window_ids[1],
+            0,
+            EventPayload::ZoomChanged {
                 k: 1.25,
                 os: 1.0,
                 level: 3,
             },
-        })
+        ))
         .expect("ZoomChanged for window 2 succeeds");
     let zoom_mutations = decode_batch(zoom_batch).expect("decodes");
     assert_eq!(
@@ -447,14 +448,14 @@ fn fr53_root_events_reach_their_registrations() {
     host.rebuild().expect("initial rebuild succeeds");
 
     let (batch, _) = host
-        .dispatch(HostEvent {
-            node_id: 0,
-            handler_id: 0,
-            payload: EventPayload::WindowRequested {
+        .dispatch(HostEvent::new(
+            0,
+            0,
+            EventPayload::WindowRequested {
                 request: 7,
                 key: "tab:notes",
             },
-        })
+        ))
         .expect("WindowRequested dispatches");
     let mutations = decode_batch(batch).expect("decodes");
     assert!(
@@ -470,11 +471,7 @@ fn fr53_root_events_reach_their_registrations() {
     );
 
     let (reopen_batch, _) = host
-        .dispatch(HostEvent {
-            node_id: 0,
-            handler_id: 0,
-            payload: EventPayload::ApplicationReopen,
-        })
+        .dispatch(HostEvent::new(0, 0, EventPayload::ApplicationReopen))
         .expect("ApplicationReopen dispatches");
     let reopen_mutations = decode_batch(reopen_batch).expect("decodes");
     assert!(
@@ -603,11 +600,7 @@ fn fr53_two_windows_share_a_signal_and_tear_off_a_tab() {
 
     // Clicking the button in window 1 updates both windows' titles and texts.
     let (click_batch, _) = host
-        .dispatch(HostEvent {
-            node_id: button.0,
-            handler_id: button.1,
-            payload: EventPayload::Clicked,
-        })
+        .dispatch(HostEvent::new(button.0, button.1, EventPayload::Clicked))
         .expect("click succeeds");
     let click_mutations = decode_batch(click_batch).expect("decodes");
     assert!(
@@ -634,10 +627,10 @@ fn fr53_two_windows_share_a_signal_and_tear_off_a_tab() {
     );
 
     // Tearing off the tab via pointer drag opens a third window carrying DragFromPointer.
-    host.dispatch(HostEvent {
-        node_id: tab_surface.0,
-        handler_id: tab_surface.1,
-        payload: EventPayload::Pointer {
+    host.dispatch(HostEvent::new(
+        tab_surface.0,
+        tab_surface.1,
+        EventPayload::Pointer {
             kind: PointerKind::Down,
             pointer_id: 9,
             pointer_type: PointerType::Mouse,
@@ -652,13 +645,13 @@ fn fr53_two_windows_share_a_signal_and_tear_off_a_tab() {
             delta_mode: WheelDeltaMode::Pixel,
             timestamp_nanos: 1,
         },
-    })
+    ))
     .expect("pointer down succeeds");
     let (tear_batch, _) = host
-        .dispatch(HostEvent {
-            node_id: tab_surface.0,
-            handler_id: tab_surface.1,
-            payload: EventPayload::Pointer {
+        .dispatch(HostEvent::new(
+            tab_surface.0,
+            tab_surface.1,
+            EventPayload::Pointer {
                 kind: PointerKind::Move,
                 pointer_id: 9,
                 pointer_type: PointerType::Mouse,
@@ -673,7 +666,7 @@ fn fr53_two_windows_share_a_signal_and_tear_off_a_tab() {
                 delta_mode: WheelDeltaMode::Pixel,
                 timestamp_nanos: 2,
             },
-        })
+        ))
         .expect("pointer drag tear-off succeeds");
     let tear_mutations = decode_batch(tear_batch).expect("decodes");
     let mut expected_drag = [0_u8; 12];

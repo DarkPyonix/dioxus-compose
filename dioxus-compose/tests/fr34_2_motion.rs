@@ -564,3 +564,179 @@ fn fr34_2_a_width_transition_is_ticked_by_the_host_and_sends_only_what_moved() {
     assert!(idle.is_empty());
     assert_eq!(questions.get(), asked, "and the Host is idle again");
 }
+
+const THROUGH_3D_CSS: &str = r#"
+html, body { margin: 0; padding: 0; }
+#flip { width: 100px; height: 50px; transition: transform 1s linear; }
+#flip.on { transform: rotateY(180deg); }
+@keyframes tumble { from { transform: rotateX(0deg); } to { transform: rotateX(360deg); } }
+#tumbler { width: 40px; height: 40px; animation: tumble 2s linear infinite; }
+"#;
+
+fn through_3d() -> Element {
+    rsx! {
+        div { id: "flip", class: class_of("flip") }
+        div { id: "tumbler" }
+    }
+}
+
+/// A renderer animates lists of 2D transform functions, so a motion of `transform` that
+/// passes through a 3D transform is not described for it, and the display list names the
+/// motion instead (the layout writes a warning to stderr for each, once).
+///
+/// - `#flip` declares `transition: transform 1s linear` and the `on` class turns it over
+///   with `rotateY(180deg)`. No transition starts: the box has the 3D transform at once.
+/// - `#tumbler` runs `tumble`, whose last keyframe is `rotateX(360deg)`. The entry lists
+///   no animation of `transform`.
+#[test]
+fn fr34_2_a_motion_through_a_3d_transform_is_not_played_and_is_named() {
+    let (mut dom, _) = open(through_3d, THROUGH_3D_CSS, false);
+    let first = dom.display_list().unwrap().clone();
+    let tumbler = entry(&dom, &first, "tumbler");
+    assert!(tumbler.animations.is_empty(), "{:#?}", tumbler.animations);
+    assert!(
+        first
+            .skipped_transforms
+            .iter()
+            .any(|skipped| skipped.node == tumbler.node
+                && skipped.transform.contains("@keyframes tumble")),
+        "{:#?}",
+        first.skipped_transforms
+    );
+
+    set("flip", true);
+    let list = relayout(&mut dom, 1.0);
+    let flip = entry(&dom, &list, "flip");
+    assert!(
+        flip.transform.is_none() && flip.transform_3d.is_some(),
+        "#flip is turned over at once: {flip:#?}"
+    );
+    assert!(
+        !list.transitions.iter().any(|start| start.node == flip.node),
+        "{:#?}",
+        list.transitions
+    );
+    assert!(
+        list.skipped_transforms
+            .iter()
+            .any(|skipped| skipped.node == flip.node
+                && skipped.tag == "div"
+                && skipped.transform == "transition: transform"),
+        "{:#?}",
+        list.skipped_transforms
+    );
+}
+
+const COLOR_CSS: &str = r#"
+html, body { margin: 0; padding: 0; }
+#ink { width: 100px; height: 30px; color: rgb(255, 0, 0); transition: color 0.5s linear; }
+#ink.on { color: rgb(0, 0, 255); }
+@keyframes glow {
+    from { color: rgb(255, 0, 0); }
+    50% { color: rgb(0, 255, 0); }
+    to { color: rgb(0, 0, 255); }
+}
+#glow { width: 100px; height: 30px; animation: glow 1s ease-in-out infinite; }
+"#;
+
+fn color_motion() -> Element {
+    rsx! {
+        div { id: "ink", class: class_of("ink"), "Hello" }
+        div { id: "glow", "Pulse" }
+    }
+}
+
+/// `color` transitions and `@keyframes` animations are described for the renderer to play
+/// with zero Host work per frame, just like `opacity`, `transform` and `background-color`.
+#[test]
+fn fr34_2_color_transition_and_keyframes_run_on_the_renderer_with_no_host_work() {
+    let (mut dom, questions) = open(color_motion, COLOR_CSS, false);
+    let first = dom.display_list().unwrap().clone();
+    assert_eq!(entry(&dom, &first, "ink").color, Rgba::new(255, 0, 0, 255));
+    assert!(first.transitions.is_empty());
+
+    let glow = entry(&dom, &first, "glow");
+    assert_eq!(glow.color, Rgba::new(255, 0, 0, 255));
+    assert_eq!(glow.animations.len(), 1, "{:#?}", glow.animations);
+    let anim = &glow.animations[0];
+    assert_eq!(anim.property, AnimatedProperty::Color);
+    assert_eq!(anim.name.as_deref(), Some("glow"));
+    assert_eq!(anim.duration, 1.0);
+    assert_eq!(anim.easing, Easing::EaseInOut);
+    assert_eq!(anim.iterations, Iterations::Infinite);
+    assert_eq!(
+        anim.keyframes
+            .iter()
+            .map(|k| (k.offset, k.value.clone()))
+            .collect::<Vec<_>>(),
+        [
+            (0.0, AnimatedValue::Colour(Rgba::new(255, 0, 0, 255))),
+            (0.5, AnimatedValue::Colour(Rgba::new(0, 255, 0, 255))),
+            (1.0, AnimatedValue::Colour(Rgba::new(0, 0, 255, 255))),
+        ]
+    );
+    assert!(
+        !dom.needs_frames(),
+        "color animations play on the renderer, not on the Host"
+    );
+
+    set("ink", true);
+    let list = relayout(&mut dom, 1.0);
+    assert_eq!(entry(&dom, &list, "ink").color, Rgba::new(0, 0, 255, 255));
+    let trans = transition(&dom, &list, "ink", AnimatedProperty::Color);
+    assert_eq!(
+        trans.start(),
+        AnimatedValue::Colour(Rgba::new(255, 0, 0, 255))
+    );
+    assert_eq!(
+        trans.end(),
+        AnimatedValue::Colour(Rgba::new(0, 0, 255, 255))
+    );
+    assert_eq!((trans.duration, trans.delay), (0.5, 0.0));
+    assert_eq!(trans.easing, Easing::Linear);
+    assert!(!dom.needs_frames());
+
+    let asked = questions.get();
+    let ticked = dom.tick(1.25, 800.0, 600.0, 1.0);
+    assert!(ticked.is_empty(), "{ticked:#?}");
+    assert_eq!(questions.get(), asked, "ticking does no layout work");
+}
+
+/// Changing `reduced_motion` at runtime rewrites the author stylesheets and restyles the
+/// document so `@media (prefers-reduced-motion: ...)` follows the new setting.
+#[test]
+fn fr34_2_set_reduced_motion_updates_media_rules_at_runtime() {
+    let (mut dom, _) = open(reduced, REDUCED_CSS, false);
+    assert!(!dom.reduced_motion());
+    assert_eq!(
+        entry(&dom, dom.display_list().unwrap(), "spinner")
+            .animations
+            .len(),
+        1
+    );
+
+    assert!(dom.set_reduced_motion(true));
+    assert!(!dom.set_reduced_motion(true));
+    assert!(dom.reduced_motion());
+    set("fader", true);
+    let list = relayout(&mut dom, 1.0);
+    assert!(
+        entry(&dom, &list, "spinner").animations.is_empty(),
+        "reduce turns off the no-preference loop"
+    );
+    assert!(
+        list.transitions.is_empty(),
+        "reduce turns off the transition: {:#?}",
+        list.transitions
+    );
+    assert_eq!(entry(&dom, &list, "fader").opacity, 0.25);
+
+    assert!(dom.set_reduced_motion(false));
+    assert!(!dom.reduced_motion());
+    let list = relayout(&mut dom, 2.0);
+    assert_eq!(
+        entry(&dom, &list, "spinner").animations.len(),
+        1,
+        "no-preference restores the loop"
+    );
+}

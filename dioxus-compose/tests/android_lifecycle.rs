@@ -64,15 +64,7 @@ fn app() -> Element {
 
 fn event(payload: EventPayload<'static>) -> Vec<u8> {
     let mut bytes = Vec::new();
-    encode_event(
-        &HostEvent {
-            node_id: 0,
-            handler_id: 0,
-            payload,
-        },
-        &mut bytes,
-    )
-    .unwrap();
+    encode_event(&HostEvent::new(0, 0, payload), &mut bytes).unwrap();
     bytes
 }
 

@@ -3,7 +3,7 @@
 
 use std::cell::RefCell;
 
-use dioxus_compose::code::{SYNTAX_SPAN_LEN, SelectionChange};
+use dioxus_compose::code::SYNTAX_SPAN_LEN;
 use dioxus_compose::prelude::*;
 use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch, encode_event};
 use dioxus_compose::schema::RevealAlign;
@@ -194,15 +194,7 @@ fn send_for_result(
     payload: EventPayload<'_>,
 ) -> (Vec<Record>, i64) {
     let mut wire = Vec::new();
-    encode_event(
-        &HostEvent {
-            node_id: node,
-            handler_id: handler,
-            payload,
-        },
-        &mut wire,
-    )
-    .unwrap();
+    encode_event(&HostEvent::new(node, handler, payload), &mut wire).unwrap();
     let (batch, result) = host.dispatch_event(&wire).unwrap();
     (records(batch), result)
 }
@@ -1184,10 +1176,10 @@ fn fr38_on_code_pointer_delivers_the_text_position_and_returns_consumption() {
 
     let mut wire = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: editor,
-            handler_id: handler,
-            payload: EventPayload::Pointer {
+        &HostEvent::new(
+            editor,
+            handler,
+            EventPayload::Pointer {
                 kind: PointerKind::Down,
                 pointer_id: 1,
                 pointer_type: PointerType::Mouse,
@@ -1202,7 +1194,7 @@ fn fr38_on_code_pointer_delivers_the_text_position_and_returns_consumption() {
                 delta_mode: WheelDeltaMode::Pixel,
                 timestamp_nanos: 0,
             },
-        },
+        ),
         &mut wire,
     )
     .unwrap();
@@ -1344,11 +1336,11 @@ fn press(host: &mut Host, first: &[Record], nth: usize) -> Vec<u8> {
     let button = buttons[nth];
     let mut wire = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: button,
-            handler_id: handler_of(first, button, PropertyKind::OnClick),
-            payload: EventPayload::Clicked,
-        },
+        &HostEvent::new(
+            button,
+            handler_of(first, button, PropertyKind::OnClick),
+            EventPayload::Clicked,
+        ),
         &mut wire,
     )
     .unwrap();
@@ -1499,14 +1491,14 @@ fn fr38_every_selection_reaches_on_selections_change_through_the_selection_liste
     let other = handler_of(&first, editor, PropertyKind::OnEditGroupResult);
     let mut wire = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: editor,
-            handler_id: other,
-            payload: EventPayload::SelectionsChanged {
+        &HostEvent::new(
+            editor,
+            other,
+            EventPayload::SelectionsChanged {
                 version: 4,
                 selections: &bytes,
             },
-        },
+        ),
         &mut wire,
     )
     .unwrap();
@@ -1574,4 +1566,51 @@ fn fr38_minimap_view_zones_and_word_wrap_arrive_and_are_withdrawn() {
             "{property:?}"
         );
     }
+}
+
+fn unattached_advanced_app() -> Element {
+    let handle = CodeEditorHandle::new();
+    rsx! {
+        Column {
+            Button {
+                text: "Trigger",
+                on_click: move |_| {
+                    handle.edit_group(1, 0, [(CodeRange::of(0, 0, 0, 0), "foo")]);
+                    handle.set_selections(0, [(Position::new(0, 0), Position::new(0, 1))]);
+                    handle.insert_snippet(0, CodeRange::of(0, 0, 0, 0), "bar");
+                },
+            }
+        }
+    }
+}
+
+/// A handle no editor carries drops grouped edits, selections and snippets before the boundary.
+#[test]
+fn fr38_grouped_edits_selections_and_snippets_for_unattached_handle_are_dropped() {
+    let mut host = Host::new(unattached_advanced_app);
+    let first = records(host.rebuild().unwrap());
+    let after = press(&mut host, &first, 0);
+    let mutations = decode_batch(&after).unwrap();
+    assert!(
+        !mutations.iter().any(|m| matches!(
+            m,
+            Mutation::EditCodeGroup { .. }
+                | Mutation::SetSelections { .. }
+                | Mutation::InsertSnippet { .. }
+        )),
+        "{mutations:?}"
+    );
+}
+
+/// `escape_snippet_text` escapes special snippet characters so they are inserted literally.
+#[test]
+fn fr38_escape_snippet_text_escapes_literal_characters() {
+    assert_eq!(escape_snippet_text("a$1}\\b"), "a\\$1\\}\\\\b");
+
+    let complex = r"fn test() { let $x = 1; } \ ${choice}";
+    let complex_escaped = escape_snippet_text(complex);
+    assert_eq!(
+        complex_escaped,
+        "fn test() { let \\$x = 1; \\} \\\\ \\${choice\\}"
+    );
 }

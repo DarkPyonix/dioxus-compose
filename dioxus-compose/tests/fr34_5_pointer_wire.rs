@@ -142,11 +142,7 @@ fn send(
     payload: EventPayload<'static>,
 ) -> (Vec<Record>, i64) {
     let (batch, result) = host
-        .dispatch(HostEvent {
-            node_id,
-            handler_id,
-            payload,
-        })
+        .dispatch(HostEvent::new(node_id, handler_id, payload))
         .expect("the pointer event is dispatched");
     (records(batch), result)
 }

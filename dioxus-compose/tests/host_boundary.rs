@@ -121,11 +121,7 @@ fn click_runs_once_and_emits_only_text_set_prop() {
         .unwrap();
     drop(initial);
 
-    let event = HostEvent {
-        node_id: button_node,
-        handler_id,
-        payload: EventPayload::Clicked,
-    };
+    let event = HostEvent::new(button_node, handler_id, EventPayload::Clicked);
     let (batch, result) = host.dispatch(event).unwrap();
     let mutations = decode_batch(batch).unwrap();
     assert_eq!(CLICKS.load(Ordering::SeqCst), 1);
@@ -176,10 +172,10 @@ fn fr12_key_consumption_is_returned_and_does_not_leak() {
     assert_eq!(handlers.len(), 2);
 
     let dispatch = |node_id, handler_id, shift_key, output: &mut MutationBatch| {
-        let event = HostEvent {
+        let event = HostEvent::new(
             node_id,
             handler_id,
-            payload: EventPayload::KeyDown {
+            EventPayload::KeyDown {
                 key: Key::Enter,
                 shift_key,
                 ctrl_key: false,
@@ -189,7 +185,7 @@ fn fr12_key_consumption_is_returned_and_does_not_leak() {
                 code: 0x28,
                 text: "Enter",
             },
-        };
+        );
         let mut bytes = Vec::new();
         dioxus_compose::protocol::encode_event(&event, &mut bytes).unwrap();
         // SAFETY: The encoded event and output storage remain live for the call.

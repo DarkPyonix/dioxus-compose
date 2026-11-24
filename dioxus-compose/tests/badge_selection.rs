@@ -115,11 +115,7 @@ fn handler_of(records: &[Record], node: u32, property: PropertyKind) -> u64 {
 fn click(host: &mut Host, node: u32, handler: u64) -> Vec<Record> {
     let mut wire = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: node,
-            handler_id: handler,
-            payload: EventPayload::Clicked,
-        },
+        &HostEvent::new(node, handler, EventPayload::Clicked),
         &mut wire,
     )
     .unwrap();

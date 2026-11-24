@@ -16,6 +16,9 @@
 //! resolver answered, with no pixels, onto each `<img>` before layout, and blitz-dom's
 //! replaced-element sizing reads only the width and height of it.
 
+use std::borrow::Cow;
+use std::cell::RefCell;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use blitz_dom::node::{ImageData, RasterImageData, SpecialElementData};
@@ -23,7 +26,10 @@ use blitz_dom::{BaseDocument, NodeData};
 use blitz_traits::net::Url;
 use style::values::computed::url::ComputedUrl;
 
+use compose_rust::schema::AssetKind;
+
 use crate::layout::local;
+use crate::paint::display_list::Rgba;
 
 /// An image the application registered with the renderer, as the application numbers it.
 /// Opaque to this crate: it is handed back in the plan and never looked into.
@@ -66,6 +72,189 @@ pub trait ImageResolver {
     fn size(&mut self, _url: &str) -> Option<ImageSize> {
         None
     }
+
+    /// The source of the image at `url`, when it is an SVG that should take the `<img>`
+    /// element's CSS `color` wherever it says `currentColor`, the way an inline `<svg>`
+    /// does in a browser. Asked while a plan is built, before [`resolve`](Self::resolve).
+    ///
+    /// An SVG that names `currentColor` is registered with the renderer once per colour it
+    /// is drawn in, with every `currentColor` written as that colour, and drawn from that
+    /// registration; [`resolve`](Self::resolve) is not asked for it. A change of the
+    /// element's `color` draws the registration for the new colour. An SVG that does not
+    /// name `currentColor`, and `None`, the default, leave the image to
+    /// [`resolve`](Self::resolve).
+    fn svg(&mut self, _url: &str) -> Option<&'static [u8]> {
+        None
+    }
+}
+
+/// How many colours one SVG keeps registered at once. A colour animation draws a new colour
+/// on every frame, and each one is a registration the renderer keeps a picture for, so past
+/// this many the least recently drawn is let go.
+pub(crate) const COLOURS_PER_SVG: usize = 16;
+
+/// One colour an SVG is registered in, and the plan that last drew it.
+struct Tint {
+    color: [u8; 4],
+    id: u32,
+    drawn_in: u64,
+}
+
+/// What is known about one source SVG: whether it can be tinted at all, and the colours it
+/// is registered in.
+#[derive(Default)]
+struct Source {
+    untintable: bool,
+    tints: Vec<Tint>,
+}
+
+/// How many inline `<svg>` pictures stay registered at once. Each distinct markup, which
+/// includes the colours written into it, is one registration, so a colour animation on an
+/// inline icon draws a new one every frame; past this many the least recently drawn is let
+/// go.
+pub(crate) const INLINE_SVGS: usize = 256;
+
+/// One inline `<svg>` registration and the plan that last drew it.
+struct InlinePicture {
+    id: u32,
+    drawn_in: u64,
+}
+
+#[derive(Default)]
+struct Tinted {
+    /// Counts plan builds, so a colour drawn in the plan being built is never let go.
+    plan: u64,
+    sources: HashMap<(usize, usize), Source>,
+    /// Inline `<svg>` registrations, by the text registered.
+    inline: HashMap<String, InlinePicture>,
+}
+
+thread_local! {
+    static TINTED: RefCell<Tinted> = RefCell::new(Tinted::default());
+}
+
+/// Marks the start of a plan build. Every colour drawn from here until the next call
+/// belongs to this plan and stays registered while it is being built.
+pub(crate) fn begin_plan() {
+    TINTED.with_borrow_mut(|tinted| tinted.plan += 1);
+}
+
+/// `svg` with every `currentColor` written as `color`, registered with the renderer, or
+/// `None` when `svg` is not UTF-8 or never names `currentColor`.
+///
+/// The answer is kept per source and colour, so a plan built again for the same image in
+/// the same colour neither rewrites the bytes nor looks through the renderer's registry.
+/// Each source keeps at most [`COLOURS_PER_SVG`] colours: a new one past that releases the
+/// one drawn longest ago, unless every one of them is drawn in the current plan, in which
+/// case the plan's colours all stay until a later plan stops drawing some.
+pub(crate) fn current_color_asset(svg: &'static [u8], color: Rgba) -> Option<AssetId> {
+    let key = (svg.as_ptr() as usize, svg.len());
+    let color = [color.r, color.g, color.b, color.a];
+    TINTED.with_borrow_mut(|tinted| {
+        let plan = tinted.plan;
+        let source = tinted.sources.entry(key).or_default();
+        if source.untintable {
+            return None;
+        }
+        if let Some(tint) = source.tints.iter_mut().find(|tint| tint.color == color) {
+            tint.drawn_in = plan;
+            return Some(AssetId(tint.id));
+        }
+        let rgba = Rgba::new(color[0], color[1], color[2], color[3]);
+        let Some(text) = std::str::from_utf8(svg)
+            .ok()
+            .and_then(|text| with_current_color(text, rgba))
+        else {
+            source.untintable = true;
+            return None;
+        };
+        if source.tints.len() >= COLOURS_PER_SVG {
+            let oldest = source
+                .tints
+                .iter()
+                .enumerate()
+                .filter(|(_, tint)| tint.drawn_in < plan)
+                .min_by_key(|(_, tint)| tint.drawn_in)
+                .map(|(at, _)| at);
+            if let Some(at) = oldest {
+                let gone = source.tints.swap_remove(at);
+                compose_rust::asset::release_owned(gone.id, AssetKind::Svg);
+            }
+        }
+        let id = compose_rust::asset::register_owned(AssetKind::Svg, text.into_bytes());
+        source.tints.push(Tint {
+            color,
+            id,
+            drawn_in: plan,
+        });
+        Some(AssetId(id))
+    })
+}
+
+/// The registration that draws the inline `<svg>` `markup`, made on its first use.
+///
+/// `markup` comes with every `currentColor` blitz-dom recognised already written as a
+/// colour; any it left (written in another case, which CSS allows) is written as `color`,
+/// the `<svg>` element's own. The same text drawn again uses the same registration. At
+/// most [`INLINE_SVGS`] stay registered: a new one past that releases the one drawn longest
+/// ago, unless every one of them is drawn in the current plan.
+pub(crate) fn inline_svg_asset(markup: &str, color: Rgba) -> AssetId {
+    // The registration is found by the text it registers, so markup whose leftover
+    // `currentColor` is written in a new colour is a new registration.
+    let text = with_current_color(markup, color).map_or(Cow::Borrowed(markup), Cow::Owned);
+    TINTED.with_borrow_mut(|tinted| {
+        let plan = tinted.plan;
+        if let Some(picture) = tinted.inline.get_mut(&*text) {
+            picture.drawn_in = plan;
+            return AssetId(picture.id);
+        }
+        if tinted.inline.len() >= INLINE_SVGS {
+            let oldest = tinted
+                .inline
+                .iter()
+                .filter(|(_, picture)| picture.drawn_in < plan)
+                .min_by_key(|(_, picture)| picture.drawn_in)
+                .map(|(text, _)| text.clone());
+            if let Some(gone) = oldest.and_then(|text| tinted.inline.remove(&text)) {
+                compose_rust::asset::release_owned(gone.id, AssetKind::Svg);
+            }
+        }
+        let text = text.into_owned();
+        let id = compose_rust::asset::register_owned(AssetKind::Svg, text.clone().into_bytes());
+        tinted
+            .inline
+            .insert(text, InlinePicture { id, drawn_in: plan });
+        AssetId(id)
+    })
+}
+
+/// `text` with every `currentColor`, in any case as CSS allows, written as `color` in hex,
+/// or `None` when it has none.
+pub(crate) fn with_current_color(text: &str, color: Rgba) -> Option<String> {
+    const KEYWORD: &str = "currentcolor";
+    // Lowering ASCII keeps every byte where it was, so a match in the lowered text is at
+    // the same place in the original.
+    let lowered = text.to_ascii_lowercase();
+    if !lowered.contains(KEYWORD) {
+        return None;
+    }
+    let hex = if color.a == u8::MAX {
+        format!("#{:02x}{:02x}{:02x}", color.r, color.g, color.b)
+    } else {
+        format!(
+            "#{:02x}{:02x}{:02x}{:02x}",
+            color.r, color.g, color.b, color.a
+        )
+    };
+    let mut out = String::with_capacity(text.len());
+    let mut at = 0;
+    for (start, _) in lowered.match_indices(KEYWORD) {
+        out.push_str(&text[at..start]);
+        out.push_str(&hex);
+        at = start + KEYWORD.len();
+    }
+    out.push_str(&text[at..]);
+    Some(out)
 }
 
 /// The base URL a document is given when the application names none.

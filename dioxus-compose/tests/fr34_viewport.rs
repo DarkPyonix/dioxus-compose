@@ -81,10 +81,10 @@ fn page() -> Element {
 }
 
 fn size_event(node_id: u32, width_dp: f32, height_dp: f32, band: f32) -> HostEvent<'static> {
-    HostEvent {
+    HostEvent::new(
         node_id,
-        handler_id: 0,
-        payload: EventPayload::WindowSizeChanged {
+        0,
+        EventPayload::WindowSizeChanged {
             width_dp,
             height_dp,
             class: WindowSizeClass::from_width_dp(width_dp),
@@ -92,8 +92,9 @@ fn size_event(node_id: u32, width_dp: f32, height_dp: f32, band: f32) -> HostEve
             safe_area_leading: 0.0,
             safe_area_top: band,
             safe_area_trailing: 0.0,
+            safe_area_bottom: 0.0,
         },
-    }
+    )
 }
 
 /// What a batch said, owned, so it outlives the Host call it came from.

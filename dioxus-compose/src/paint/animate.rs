@@ -31,6 +31,7 @@ pub(crate) fn wire_property(property: AnimatedProperty) -> wire::AnimatedPropert
     match property {
         AnimatedProperty::Opacity => wire::AnimatedProperty::Alpha,
         AnimatedProperty::Transform => wire::AnimatedProperty::Transform,
+        AnimatedProperty::Color => wire::AnimatedProperty::Color,
         AnimatedProperty::BackgroundColor => wire::AnimatedProperty::Background,
     }
 }
@@ -40,6 +41,7 @@ pub(crate) fn css_name(property: AnimatedProperty) -> &'static str {
     match property {
         AnimatedProperty::Opacity => "opacity",
         AnimatedProperty::Transform => "transform",
+        AnimatedProperty::Color => "color",
         AnimatedProperty::BackgroundColor => "background-color",
     }
 }
@@ -215,7 +217,10 @@ pub(crate) fn to_wire(
         });
     }
 
-    let colour = animation.property == AnimatedProperty::BackgroundColor;
+    let colour = matches!(
+        animation.property,
+        AnimatedProperty::Color | AnimatedProperty::BackgroundColor
+    );
     let origin = transforms.first().map_or((0.5, 0.5), |transform| {
         let fraction = |origin: f32, extent: f32| {
             if extent > 0.0 { origin / extent } else { 0.5 }

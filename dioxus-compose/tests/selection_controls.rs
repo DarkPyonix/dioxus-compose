@@ -62,11 +62,7 @@ fn handler_of(batch: &[u8], node: u32, property: PropertyKind) -> u64 {
 fn deliver(host: &mut Host, node: u32, handler: u64, value: f64) {
     let mut encoded = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: node,
-            handler_id: handler,
-            payload: EventPayload::ValueChanged(value),
-        },
+        &HostEvent::new(node, handler, EventPayload::ValueChanged(value)),
         &mut encoded,
     )
     .unwrap();
@@ -118,11 +114,7 @@ fn fr15_selection_control_properties_keep_their_assigned_tags() {
 /// one f64 because an epoch count, a slider position and a toggle all fit in it exactly.
 #[test]
 fn fr15_value_changed_is_tag_16_carrying_one_f64() {
-    let event = HostEvent {
-        node_id: 4,
-        handler_id: 9,
-        payload: EventPayload::ValueChanged(0.25),
-    };
+    let event = HostEvent::new(4, 9, EventPayload::ValueChanged(0.25));
     let mut encoded = Vec::new();
     encode_event(&event, &mut encoded).unwrap();
 
@@ -140,11 +132,7 @@ fn fr15_value_changed_is_tag_16_carrying_one_f64() {
 /// it away, and a slider is the reason the event carries a float at all.
 #[test]
 fn fr15_a_fractional_value_survives_the_round_trip() {
-    let event = HostEvent {
-        node_id: 1,
-        handler_id: 2,
-        payload: EventPayload::ValueChanged(-19_723.5),
-    };
+    let event = HostEvent::new(1, 2, EventPayload::ValueChanged(-19_723.5));
     let mut encoded = Vec::new();
     encode_event(&event, &mut encoded).unwrap();
     assert_eq!(decode_event(&encoded).unwrap(), event);
@@ -156,11 +144,7 @@ fn fr15_a_fractional_value_survives_the_round_trip() {
 fn fr15_the_reserved_gesture_tags_are_not_decoded_as_a_value_change() {
     let mut encoded = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: 1,
-            handler_id: 2,
-            payload: EventPayload::ValueChanged(1.0),
-        },
+        &HostEvent::new(1, 2, EventPayload::ValueChanged(1.0)),
         &mut encoded,
     )
     .unwrap();

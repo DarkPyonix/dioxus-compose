@@ -138,20 +138,16 @@ pub(crate) fn semantics_for(
     if role.is_none() && label.is_none() && !stated {
         return None;
     }
+    // compose-rust's `SemanticsState` cannot be written as a literal, so the state starts
+    // from one field and the rest are assigned.
+    let mut state = SemanticsState::hidden(hidden);
+    state.checked = checked;
+    state.selected = selected;
+    state.expanded = expanded;
+    state.disabled = disabled;
+    state.click_action = takes_clicks;
     Some(NodeSemantics {
-        semantics: Semantics {
-            role,
-            state: SemanticsState {
-                checked,
-                selected,
-                expanded,
-                disabled,
-                focused: None,
-                hidden,
-                click_action: takes_clicks,
-                focus_action: false,
-            },
-        },
+        semantics: Semantics { role, state },
         label,
     })
 }

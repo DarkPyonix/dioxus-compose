@@ -56,11 +56,7 @@ fn buttons(batch: &[u8]) -> Vec<(u32, u64)> {
 fn click(host: &mut Host, (node, handler): (u32, u64)) -> Vec<Mutation<'static>> {
     let mut wire = Vec::new();
     encode_event(
-        &HostEvent {
-            node_id: node,
-            handler_id: handler,
-            payload: EventPayload::Clicked,
-        },
+        &HostEvent::new(node, handler, EventPayload::Clicked),
         &mut wire,
     )
     .unwrap();

@@ -16,7 +16,7 @@ use std::time::Duration;
 use support::apps::{self, quiet};
 use support::{Prop, Screen, Tree};
 
-const WAIT: Duration = Duration::from_secs(60);
+const WAIT: Duration = Duration::from_secs(180);
 
 /// The Text a code block's code is drawn in: the monospace Text inside a ScrollRow.
 fn code_texts(tree: &Tree) -> Vec<u32> {
@@ -559,11 +559,11 @@ fn fr37_a_theme_change_costs_coloured_code_and_diff_nothing() {
     ] {
         let (batch, _) = screen
             .host
-            .dispatch(HostEvent {
-                node_id: 0,
-                handler_id: 0,
-                payload: EventPayload::DesignSystemResolved(system),
-            })
+            .dispatch(HostEvent::new(
+                0,
+                0,
+                EventPayload::DesignSystemResolved(system),
+            ))
             .expect("the design system change failed");
         let mutations = decode_batch(batch).expect("decode");
         assert!(

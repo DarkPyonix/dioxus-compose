@@ -73,6 +73,7 @@ pub(crate) fn wire_spans(
     base: SpanBase,
     runs: &[SpanRun],
     colour: &mut dyn FnMut(Rgba) -> Option<compose_rust::schema::Paint>,
+    on_click: &mut dyn FnMut(&SpanRun) -> Option<u64>,
 ) -> TextSpans {
     let lined = base.italic || base.underline || base.line_through;
     let mut spans: Vec<(TextSpan, FontRefs)> = Vec::new();
@@ -94,6 +95,7 @@ pub(crate) fn wire_spans(
         span.underline = base.underline || run.underline;
         span.strikethrough = base.line_through || run.line_through;
         span.color = run.color.and_then(&mut *colour);
+        span.on_click = on_click(run);
         let fonts = run
             .font_family
             .as_deref()
@@ -240,7 +242,11 @@ fn wire_style(style: &TextStyle, white_space: TextWhiteSpace) -> WireStyle {
         font: font_refs(&style.font_family),
         font_size: Some(style.font_size),
         font_weight: Some(style.font_weight.round().clamp(1.0, 1000.0) as u16),
-        italic: style.italic,
+        // The page draws a slant as a span over the text, never in the text style, and the
+        // renderer tracks a slanted style differently from a slanted span. The slant goes
+        // in the spans here as well (`measure_spans`), so the width measured is the width
+        // drawn.
+        italic: false,
         letter_spacing: Some(style.letter_spacing),
         // `normal` is the multiple the page draws it with.
         line_height: Some(match style.line_height {
@@ -274,20 +280,22 @@ impl TextMeasurer for RendererMeasurer {
 
     fn measure_spans(&mut self, request: &TextMeasureRequest<'_>, runs: &[SpanRun]) -> TextMetrics {
         // Only what changes a size goes in the question: a colour does not.
-        let spans = if runs.is_empty() {
+        // A text with no runs that is slanted all through is drawn as one italic span over
+        // every byte, and `wire_spans` gives exactly that span for no runs and a slanted base.
+        let spans = if runs.is_empty() && !request.style.italic {
             TextSpans::default()
         } else {
             let base = SpanBase {
                 italic: request.style.italic,
                 ..SpanBase::default()
             };
-            wire_spans(request.text.len(), base, runs, &mut |_| None)
+            wire_spans(request.text.len(), base, runs, &mut |_| None, &mut |_| None)
         };
         let key = Key::of(request, &spans, self.zoom);
         if let Some(metrics) = self.answers.get(&key) {
             return *metrics;
         }
-        let provisional = self.fallback.measure(request);
+        let provisional = self.fallback.measure_spans(request, runs);
         if !self.asked.iter().any(|question| question.key == key) {
             self.asked.push(Question {
                 key,

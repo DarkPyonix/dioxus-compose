@@ -36,16 +36,10 @@ impl Semantics {
     pub const fn new(role: SemanticsRole) -> Self {
         Self {
             role: Some(role),
-            state: SemanticsState {
-                checked: None,
-                selected: None,
-                expanded: None,
-                disabled: None,
-                focused: None,
-                hidden: false,
-                click_action: false,
-                focus_action: false,
-            },
+            // The state that says nothing. compose-rust's `SemanticsState` cannot be written
+            // as a literal, and `Default` is not `const`; `hidden(false)` sets only the one
+            // field that is already false.
+            state: SemanticsState::hidden(false),
         }
     }
 
@@ -386,6 +380,182 @@ fn opt_press_feedback(value: Option<(f32, f32)>) -> Option<AttributeValue> {
     value.map(AttributeValue::any_value)
 }
 
+/// The bounds a node's size is kept within, in dp, as Compose's `sizeIn` takes them. A
+/// bound left out does not constrain, so `SizeIn::default()` changes nothing.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+pub struct SizeIn {
+    pub min_width: Option<f32>,
+    pub max_width: Option<f32>,
+    pub min_height: Option<f32>,
+    pub max_height: Option<f32>,
+}
+
+impl SizeIn {
+    /// No bounds at all.
+    pub const fn new() -> Self {
+        Self {
+            min_width: None,
+            max_width: None,
+            min_height: None,
+            max_height: None,
+        }
+    }
+
+    pub const fn min_width(mut self, dp: f32) -> Self {
+        self.min_width = Some(dp);
+        self
+    }
+
+    pub const fn max_width(mut self, dp: f32) -> Self {
+        self.max_width = Some(dp);
+        self
+    }
+
+    pub const fn min_height(mut self, dp: f32) -> Self {
+        self.min_height = Some(dp);
+        self
+    }
+
+    pub const fn max_height(mut self, dp: f32) -> Self {
+        self.max_height = Some(dp);
+        self
+    }
+
+    /// The modifier this travels as. A bound left out crosses as NaN, which the Renderer
+    /// reads as unconstrained.
+    pub fn to_modifier(&self) -> compose_rust::Modifier {
+        let bound = |value: Option<f32>| value.unwrap_or(f32::NAN);
+        compose_rust::Modifier::SizeIn {
+            min_width: bound(self.min_width),
+            max_width: bound(self.max_width),
+            min_height: bound(self.min_height),
+            max_height: bound(self.max_height),
+        }
+    }
+
+    /// The value of the `size_in` attribute. The bounds travel as themselves rather than
+    /// as the modifier, so an unchanged set compares equal: a bound left out is NaN in the
+    /// modifier, and NaN never equals itself.
+    pub(crate) fn attribute(self) -> AttributeValue {
+        AttributeValue::any_value(self)
+    }
+}
+
+/// The `aspect_ratio` attribute: the width over the height, and whether the height's
+/// constraints are tried before the width's. Nothing when no ratio is given.
+fn aspect_ratio_attr(
+    ratio: Option<f32>,
+    match_height_constraints_first: bool,
+) -> Option<AttributeValue> {
+    ratio.map(|ratio| {
+        AttributeValue::any_value(compose_rust::Modifier::AspectRatio {
+            ratio,
+            match_height_constraints_first,
+        })
+    })
+}
+
+/// Discrete pointer gesture handlers on a widget, merged into the node's single
+/// `pointer_kinds` mask and `on_pointer` callback so no extra wire properties are needed.
+#[derive(Clone, Copy, Default)]
+struct PointerGestures {
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    on_scroll: Option<EventHandler<PointerEvent>>,
+}
+
+impl PointerGestures {
+    /// Combined `pointer_kinds` bitmask from an explicit `pointer_kinds` prop and every
+    /// discrete gesture handler that is set. Returns `None` when nothing is subscribed.
+    fn kinds(&self, explicit: Option<PointerKinds>) -> Option<i64> {
+        let mut mask = explicit.unwrap_or(PointerKinds::NONE);
+        if self.on_pointer_enter.is_some() {
+            mask = mask.union(PointerKinds::ENTER);
+        }
+        if self.on_pointer_leave.is_some() {
+            mask = mask.union(PointerKinds::LEAVE);
+        }
+        if self.on_pointer_move.is_some() {
+            mask = mask.union(PointerKinds::MOVE);
+        }
+        if self.on_long_press.is_some() {
+            mask = mask.union(PointerKinds::DOWN);
+        }
+        if self.on_context_menu.is_some() {
+            mask = mask.union(PointerKinds::CONTEXT_MENU);
+        }
+        if self.on_drag_start.is_some() {
+            mask = mask.union(PointerKinds::DOWN);
+        }
+        if self.on_drag_move.is_some() {
+            mask = mask.union(PointerKinds::MOVE);
+        }
+        if self.on_drag_end.is_some() {
+            mask = mask.union(PointerKinds::UP).union(PointerKinds::CANCEL);
+        }
+        if self.on_scroll.is_some() {
+            mask = mask.union(PointerKinds::WHEEL);
+        }
+        (mask != PointerKinds::NONE).then(|| i64::from(mask.bits()))
+    }
+
+    /// Routes an incoming pointer event to matching discrete gesture handlers and then to
+    /// the widget's general `on_pointer` handler.
+    fn dispatch(&self, on_pointer: EventHandler<PointerEvent>, event: PointerEvent) {
+        use compose_rust::schema::PointerKind;
+        match event.kind() {
+            PointerKind::Enter => {
+                if let Some(handler) = self.on_pointer_enter {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::Leave => {
+                if let Some(handler) = self.on_pointer_leave {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::Move => {
+                if let Some(handler) = self.on_pointer_move {
+                    handler.call(event.clone());
+                }
+                if let Some(handler) = self.on_drag_move {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::Down => {
+                if let Some(handler) = self.on_long_press {
+                    handler.call(event.clone());
+                }
+                if let Some(handler) = self.on_drag_start {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::Up | PointerKind::Cancel => {
+                if let Some(handler) = self.on_drag_end {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::Wheel => {
+                if let Some(handler) = self.on_scroll {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::ContextMenu => {
+                if let Some(handler) = self.on_context_menu {
+                    handler.call(event.clone());
+                }
+            }
+        }
+        on_pointer.call(event);
+    }
+}
+
 /// A box that places each child where the Host already put it, for a screen whose layout
 /// was computed before it got here, such as an HTML page laid out by a CSS engine.
 ///
@@ -428,6 +598,13 @@ pub fn AbsoluteBox(
     /// How the rounded corners curve, from 0 (a circular arc) to 1 (the smoothest curve).
     #[props(default)]
     corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     /// What the box is to assistive technology.
     #[props(default)]
     semantics: Option<Semantics>,
@@ -466,6 +643,33 @@ pub fn AbsoluteBox(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -478,6 +682,17 @@ pub fn AbsoluteBox(
     island_zoom: Option<f32>,
 ) -> Element {
     use compose_rust::Modifier;
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     let (origin_x, origin_y) = transform_origin.unwrap_or((0.5, 0.5));
     // An animated value takes the place of the plain one in the same slot, and a graphics
     // layer takes the place of a bare transform and opacity.
@@ -525,9 +740,9 @@ pub fn AbsoluteBox(
             island_zoom: island_zoom.map(f64::from),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             offset: offset.map(|(x, y)| AttributeValue::any_value(Modifier::Offset { x, y })),
             required_size: required_size.map(|(width, height)| {
                 AttributeValue::any_value(Modifier::RequiredSize { width, height })
@@ -545,6 +760,12 @@ pub fn AbsoluteBox(
             transform,
             transform_3d,
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             animated_alpha: animated_alpha.map(AttributeValue::any_value),
@@ -586,6 +807,13 @@ pub fn Column(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -630,6 +858,33 @@ pub fn Column(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -642,6 +897,17 @@ pub fn Column(
     #[props(default)]
     on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         column {
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
@@ -650,9 +916,9 @@ pub fn Column(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             tear_off_key,
             onwindowdragover: on_window_drag_over.map(|handler| {
                 dioxus_core::ListenerCallback::new(
@@ -673,6 +939,12 @@ pub fn Column(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -723,6 +995,13 @@ pub fn Row(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -767,6 +1046,33 @@ pub fn Row(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -779,6 +1085,17 @@ pub fn Row(
     #[props(default)]
     on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         row {
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
@@ -787,9 +1104,9 @@ pub fn Row(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             tear_off_key,
             onwindowdragover: on_window_drag_over.map(|handler| {
                 dioxus_core::ListenerCallback::new(
@@ -810,6 +1127,12 @@ pub fn Row(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -847,6 +1170,13 @@ pub fn FlowRow(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -882,6 +1212,12 @@ pub fn FlowRow(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -930,6 +1266,13 @@ pub fn ComposeBox(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -963,6 +1306,33 @@ pub fn ComposeBox(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -975,6 +1345,17 @@ pub fn ComposeBox(
     #[props(default)]
     on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         composebox {
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
@@ -983,9 +1364,9 @@ pub fn ComposeBox(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             tear_off_key,
             onwindowdragover: on_window_drag_over.map(|handler| {
                 dioxus_core::ListenerCallback::new(
@@ -1006,6 +1387,12 @@ pub fn ComposeBox(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -1045,6 +1432,13 @@ pub fn ScrollColumn(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -1068,7 +1462,45 @@ pub fn ScrollColumn(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         scrollcolumn {
             snap: opt_role(snap.filter(|snap| *snap != Snap::None)),
@@ -1078,8 +1510,8 @@ pub fn ScrollColumn(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1089,6 +1521,12 @@ pub fn ScrollColumn(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -1126,6 +1564,13 @@ pub fn ScrollRow(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -1149,7 +1594,45 @@ pub fn ScrollRow(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         scrollrow {
             snap: opt_role(snap.filter(|snap| *snap != Snap::None)),
@@ -1159,8 +1642,8 @@ pub fn ScrollRow(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1170,6 +1653,12 @@ pub fn ScrollRow(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -1203,6 +1692,13 @@ pub fn Text(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -1268,11 +1764,53 @@ pub fn Text(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     // Worked out before the element, because the run list travels twice: its records as
     // `spans` and its font table as `span_fonts`, and only one of them can take it.
     let span_fonts = (spans.font_entry_count() > 0)
         .then(|| AttributeValue::any_value(crate::renderer::SpanFontTable(spans.clone())));
+    // The OpenType features each run names travel beside the runs the same way, and only
+    // a text whose runs name some carries them at all.
+    let span_font_features = (spans.feature_entry_count() > 0)
+        .then(|| AttributeValue::any_value(crate::renderer::SpanFeatureTable(spans.clone())));
     let spans = (!spans.is_empty()).then(|| AttributeValue::any_value(spans));
     let font = (!font.is_empty()).then(|| AttributeValue::any_value(font));
     let text: dioxus_core::AttributeValue = if streaming {
@@ -1291,8 +1829,8 @@ pub fn Text(
                     press_feedback: opt_press_feedback(press_feedback),
                     cursor: opt_role(cursor),
                     user_select: opt_role(user_select),
-                    pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
-                    onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+                    pointer_kinds: pointer_gestures.kinds(pointer_kinds),
+                    onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
                     weight: opt_dp(weight),
                     width: opt_dp(width),
                     height: opt_dp(height),
@@ -1302,6 +1840,12 @@ pub fn Text(
                     shape_role: opt_role(shape_role),
                     corner_radius: opt_dp(corner_radius),
                     corner_curve: opt_dp(corner_curve),
+                    size_in: size_in.map(SizeIn::attribute),
+                    aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+                    min_touch_target: opt_dp(min_touch_target),
+                    overlay: opt_paint(overlay),
+                    sticky: sticky.then_some(true),
+                    unbounded_width: unbounded_width.then_some(true),
                     semantics: semantics.map(Semantics::attribute),
                     accessible_name,
                     border_width: opt_dp(border_width),
@@ -1312,6 +1856,7 @@ pub fn Text(
                     // Left out entirely when there are none, so a Text that says nothing
                     // about runs travels exactly as it did before runs existed.
                     span_fonts,
+                    span_font_features,
                     spans,
                     text,
                     // Sent only when there is one, and as its tag when there is:
@@ -1366,6 +1911,13 @@ pub fn TextField(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -1401,9 +1953,21 @@ pub fn TextField(
     /// brings. Left out, the Renderer is not asked to report it.
     #[props(default)]
     on_key_up: Option<EventHandler<KeyEvent>>,
+    /// The colour of the placeholder text. Left out, the design system's.
+    #[props(default)]
+    placeholder_color: Option<Paint>,
+    /// The colour of the caret. Left out, the design system's.
+    #[props(default)]
+    caret_color: Option<Paint>,
+    /// When true, the field stays focusable and selectable (including copy) while rejecting edits.
+    #[props(default)]
+    read_only: bool,
 ) -> Element {
     rsx! {
         textfield {
+            placeholder_color: opt_paint(placeholder_color),
+            caret_color: opt_paint(caret_color),
+            read_only: read_only.then_some(true),
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
             weight: opt_dp(weight),
             width: opt_dp(width),
@@ -1414,6 +1978,12 @@ pub fn TextField(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -1454,6 +2024,13 @@ pub fn Button(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -1505,6 +2082,12 @@ pub fn Button(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -1551,6 +2134,13 @@ pub fn Spacer(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -1573,13 +2163,51 @@ pub fn Spacer(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         spacer {
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -1589,6 +2217,12 @@ pub fn Spacer(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -1623,6 +2257,13 @@ pub fn LazyColumn(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -1650,6 +2291,12 @@ pub fn LazyColumn(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -1707,6 +2354,13 @@ pub fn Card(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -1739,6 +2393,33 @@ pub fn Card(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -1751,6 +2432,17 @@ pub fn Card(
     #[props(default)]
     on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         card {
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
@@ -1759,9 +2451,9 @@ pub fn Card(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             tear_off_key,
             onwindowdragover: on_window_drag_over.map(|handler| {
                 dioxus_core::ListenerCallback::new(
@@ -1782,6 +2474,12 @@ pub fn Card(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -1829,6 +2527,13 @@ pub fn Surface(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -1857,6 +2562,33 @@ pub fn Surface(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -1869,6 +2601,17 @@ pub fn Surface(
     #[props(default)]
     on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         surface {
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
@@ -1877,9 +2620,9 @@ pub fn Surface(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             tear_off_key,
             onwindowdragover: on_window_drag_over.map(|handler| {
                 dioxus_core::ListenerCallback::new(
@@ -1900,6 +2643,12 @@ pub fn Surface(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -1931,6 +2680,13 @@ pub fn Dialog(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -1954,6 +2710,12 @@ pub fn Dialog(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -1988,6 +2750,13 @@ pub fn Menu(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2012,6 +2781,12 @@ pub fn Menu(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2050,6 +2825,13 @@ pub fn Popover(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2096,6 +2878,12 @@ pub fn Popover(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2138,6 +2926,13 @@ pub fn Tabs(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2160,6 +2955,12 @@ pub fn Tabs(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2186,6 +2987,13 @@ pub fn TopAppBar(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2203,10 +3011,15 @@ pub fn TopAppBar(
     /// child would.
     #[props(default)]
     title: String,
+    /// Whether the design system's hairline is drawn under the bar. Left out, the design
+    /// system decides: Cupertino, Fluent and GNOME draw one, Material 3 and Deepin do not.
+    #[props(default)]
+    separator: Option<bool>,
     children: Element,
 ) -> Element {
     rsx! {
         topappbar {
+            separator,
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -2216,6 +3029,12 @@ pub fn TopAppBar(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2247,6 +3066,13 @@ pub fn LazyRow(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2274,6 +3100,12 @@ pub fn LazyRow(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2311,6 +3143,13 @@ pub fn Tooltip(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2332,6 +3171,12 @@ pub fn Tooltip(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2365,6 +3210,13 @@ pub fn Canvas(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2385,6 +3237,12 @@ pub fn Canvas(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2413,6 +3271,13 @@ pub fn Image(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2437,6 +3302,12 @@ pub fn Image(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2463,6 +3334,13 @@ pub fn Icon(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2470,7 +3348,14 @@ pub fn Icon(
     #[props(default)] elevation: Option<f32>,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
+    /// A registered icon, drawn as its asset says.
+    #[props(default)]
     asset_id: u32,
+    /// An SVG the application registered as `AssetKind::Svg`, drawn in the icon slot at
+    /// the size a role icon has and in `color`: every fill and stroke takes that colour and
+    /// keeps its own alpha. Given, it takes the place of `asset_id`.
+    #[props(default)]
+    icon_asset: Option<u32>,
     #[props(default)] color: Option<Paint>,
 ) -> Element {
     rsx! {
@@ -2484,6 +3369,12 @@ pub fn Icon(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2491,8 +3382,93 @@ pub fn Icon(
             elevation: opt_dp(elevation),
             fill_max_width,
             fill_max_height,
-            asset: i64::from(asset_id),
+            asset: icon_asset.is_none().then_some(i64::from(asset_id)),
+            icon_asset: icon_asset.map(i64::from),
             color: color.map_or(0, |paint| paint.to_bits() as i64),
+        }
+    }
+}
+
+/// A place in the window for a platform view the application made: a web view, a video
+/// surface or a map, as an `NSView`, an `HWND` or an X11 window.
+///
+/// Make the view against the handle the window reported
+/// (`dioxus_compose::native_view::native_parent`), then hand it over as `handle`. The
+/// Renderer puts it over this node's rectangle and keeps it there as the layout moves and
+/// scrolls, cuts it to what the node's ancestors and anything drawn above it leave
+/// showing, and hands keyboard focus to it and back. It never destroys the view: once the
+/// node is gone, or `NativeHandle::NONE` has replaced the handle, and the frame saying so
+/// has been applied, the view is the application's to destroy.
+///
+/// The node has no size of its own. Give it one with `width`, `height`, a fill or a
+/// weight; what its background draws shows only where the view does not cover it.
+#[component]
+pub fn NativeView(
+    /// The platform view. Left out, or `NativeHandle::NONE`, the node holds none. A
+    /// handle that did not change is not handed over again.
+    #[props(default)]
+    handle: compose_rust::NativeHandle,
+    /// Whether the view shows. A hidden view stays in the window with everything it
+    /// holds, so showing it again shows the same page; only removing the node takes it
+    /// out.
+    #[props(default = true)]
+    visible: bool,
+    /// Called when the view takes the keyboard focus (true) or loses it (false): a click
+    /// in it, a focus request, the window going to the background and coming back. Left
+    /// out, the Renderer is not asked to report it.
+    #[props(default)]
+    on_focus_change: Option<EventHandler<bool>>,
+    #[props(default)] weight: Option<f32>,
+    #[props(default)] width: Option<f32>,
+    #[props(default)] height: Option<f32>,
+    #[props(default)] padding: Option<f32>,
+    #[props(default)] padding_role: Option<SpaceRole>,
+    #[props(default)] background: Option<Paint>,
+    #[props(default)] shape_role: Option<ShapeRole>,
+    #[props(default)] corner_radius: Option<f32>,
+    #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
+    #[props(default)] semantics: Option<Semantics>,
+    #[props(into, default)] accessible_name: Option<String>,
+    #[props(default)] border_width: Option<f32>,
+    #[props(default)] border_color: Option<Paint>,
+    #[props(default)] elevation: Option<f32>,
+    #[props(default)] fill_max_width: bool,
+    #[props(default)] fill_max_height: bool,
+) -> Element {
+    rsx! {
+        nativeview {
+            handle: handle.0 as i64,
+            native_visible: (!visible).then_some(false),
+            onnativeviewfocus: optional_listener(on_focus_change, |focused: &bool| *focused),
+            weight: opt_dp(weight),
+            width: opt_dp(width),
+            height: opt_dp(height),
+            padding: opt_dp(padding),
+            padding_role: opt_role(padding_role),
+            background: opt_paint(background),
+            shape_role: opt_role(shape_role),
+            corner_radius: opt_dp(corner_radius),
+            corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
+            semantics: semantics.map(Semantics::attribute),
+            accessible_name,
+            border_width: opt_dp(border_width),
+            border_color: opt_paint(border_color),
+            elevation: opt_dp(elevation),
+            fill_max_width,
+            fill_max_height,
         }
     }
 }
@@ -2517,6 +3493,13 @@ pub fn DatePicker(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2542,6 +3525,12 @@ pub fn DatePicker(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2573,6 +3562,13 @@ pub fn TimePicker(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2598,6 +3594,12 @@ pub fn TimePicker(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2634,6 +3636,13 @@ pub fn Dropdown(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2658,6 +3667,12 @@ pub fn Dropdown(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2689,6 +3704,13 @@ pub fn Checkbox(
     /// The check mark. Left out, the design system's.
     #[props(default)]
     check_color: Option<Paint>,
+    /// The box's border, in every state alike. Left out, the design system's.
+    #[props(default)]
+    outline_color: Option<Paint>,
+    /// The mixed state: the box stands for a set of which only some are checked. It wins
+    /// over `checked`, the box is drawn with a dash, and a press asks for checked.
+    #[props(default)]
+    indeterminate: bool,
     /// The length of the box's side in dp. Left out, the design system's.
     #[props(default)]
     size: Option<f32>,
@@ -2701,6 +3723,13 @@ pub fn Checkbox(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2714,8 +3743,10 @@ pub fn Checkbox(
 ) -> Element {
     rsx! {
         checkbox {
+            indeterminate: indeterminate.then_some(true),
             container_color: opt_paint(container_color),
             check_color: opt_paint(check_color),
+            outline_color: opt_paint(outline_color),
             control_size: size.map(|side| AttributeValue::any_value((side, side))),
             weight: opt_dp(weight),
             width: opt_dp(width),
@@ -2726,6 +3757,12 @@ pub fn Checkbox(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2768,6 +3805,13 @@ pub fn RadioButton(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2793,6 +3837,12 @@ pub fn RadioButton(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2818,6 +3868,14 @@ pub fn Switch(
     /// The thumb that travels along the track. Left out, the design system's.
     #[props(default)]
     thumb_color: Option<Paint>,
+    /// How high the thumb is lifted, in dp: a soft shadow under it that travels with it.
+    /// Left out, the design system's; 0 is no shadow.
+    #[props(default)]
+    thumb_elevation: Option<f32>,
+    /// A line around the track in both states: its width in dp and its paint. Left out,
+    /// the design system's; a width of 0 is none.
+    #[props(default)]
+    track_border: Option<(f32, Paint)>,
     /// The track's width and height in dp; the thumb scales with the height. Left out, the
     /// design system's.
     #[props(default)]
@@ -2831,6 +3889,13 @@ pub fn Switch(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2846,6 +3911,8 @@ pub fn Switch(
         switch {
             track_color: opt_paint(track_color),
             thumb_color: opt_paint(thumb_color),
+            thumb_elevation: opt_dp(thumb_elevation),
+            track_border: track_border.map(AttributeValue::any_value),
             control_size: size.map(AttributeValue::any_value),
             weight: opt_dp(weight),
             width: opt_dp(width),
@@ -2856,6 +3923,12 @@ pub fn Switch(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2907,6 +3980,13 @@ pub fn Slider(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2937,6 +4017,12 @@ pub fn Slider(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -2970,6 +4056,13 @@ pub fn ProgressIndicator(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -2992,6 +4085,12 @@ pub fn ProgressIndicator(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -3019,6 +4118,13 @@ pub fn Divider(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -3039,6 +4145,12 @@ pub fn Divider(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -3092,6 +4204,13 @@ pub fn Navigation(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -3125,6 +4244,12 @@ pub fn Navigation(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -3167,6 +4292,13 @@ pub fn NavigationItem(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -3205,6 +4337,12 @@ pub fn NavigationItem(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -3232,17 +4370,30 @@ pub fn NavigationItem(
 ///
 /// Which edge it comes from is the Renderer's decision, made from the width it measured:
 /// up from the bottom in a narrow window, in from the side in a wide one. There is no
-/// property that could ask for one of them, for the same reason there is none that can ask
-/// a date picker for a wheel.
+/// property that could ask for one edge, for the same reason there is none that can ask
+/// a date picker for a wheel. `presentation` can ask for no edge at all: a modal in the
+/// centre of the window.
 #[component]
 pub fn Sheet(
     /// The colour that dims the window behind it. Left out, the design system's.
     #[props(default)]
     scrim: Option<Paint>,
+    /// Whether the sheet enters from an edge (`SheetPresentation::Edge`) or appears in the
+    /// centre of the window (`SheetPresentation::Centered`). Left out, or `Edge`, nothing
+    /// is sent and it is an edge sheet.
+    #[props(default)]
+    presentation: Option<compose_rust::SheetPresentation>,
+    /// The widest a centred sheet grows, in dp. Left out, or 0, the design system's
+    /// (560 dp). An edge sheet takes its width from its edge and ignores it.
+    #[props(default)]
+    max_width: Option<u32>,
     /// The most of the window's height a bottom sheet may take, from 0 to 1. A value above
     /// 1 is taken as 1, and one of 0 or less as not given. Left out, the design system's.
     #[props(default)]
     max_height_fraction: Option<f32>,
+    /// Whether a bottom sheet draws its drag handle. Left out, the design system decides.
+    #[props(default)]
+    sheet_handle: Option<bool>,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -3252,6 +4403,13 @@ pub fn Sheet(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -3266,11 +4424,16 @@ pub fn Sheet(
     rsx! {
         sheet {
             scrim: opt_paint(scrim),
+            presentation: presentation
+                .filter(|presentation| *presentation != compose_rust::SheetPresentation::Edge)
+                .map(|presentation| i64::from(u16::from(presentation))),
+            max_width: max_width.filter(|dp| *dp > 0).map(i64::from),
             max_height_fraction: opt_dp(
                 max_height_fraction
                     .filter(|fraction| *fraction > 0.0)
                     .map(|fraction| fraction.min(1.0)),
             ),
+            sheet_handle,
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -3280,6 +4443,12 @@ pub fn Sheet(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -3400,6 +4569,13 @@ pub fn LazyGrid(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -3433,6 +4609,12 @@ pub fn LazyGrid(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -3478,6 +4660,13 @@ pub fn FileDropTarget(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -3507,6 +4696,12 @@ pub fn FileDropTarget(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -3630,6 +4825,13 @@ pub fn Badge(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -3660,6 +4862,12 @@ pub fn Badge(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -3700,6 +4908,13 @@ pub fn SelectionContainer(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -3723,13 +4938,51 @@ pub fn SelectionContainer(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         selectioncontainer {
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
@@ -3739,6 +4992,12 @@ pub fn SelectionContainer(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -3794,6 +5053,13 @@ pub fn SplitPane(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -3843,6 +5109,12 @@ pub fn SplitPane(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),
@@ -3960,6 +5232,19 @@ pub fn CodeEditor(
     /// broken and nothing is sent.
     #[props(default)]
     word_wrap: Option<compose_rust::code::WordWrap>,
+    /// Room above the first line and below the last, in dp, as `(top, bottom)`. It lies
+    /// inside the scrolled content, so it scrolls away with the text, while the gutter and
+    /// its divider still fill the view. Left out, or both 0, nothing is sent.
+    #[props(default)]
+    content_padding_dp: Option<(f32, f32)>,
+    /// Room above the first line alone, in dp: `content_padding_dp` with no room below.
+    /// `content_padding_dp` takes its place when both are given.
+    #[props(default)]
+    content_padding_top_dp: Option<f32>,
+    /// Keeps the fold column and the change bar column in the gutter whether or not the
+    /// file has folds or changes, so the text starts at the same place in every file.
+    #[props(default)]
+    fixed_gutter_columns: bool,
     /// Called once for every grouped edit asked of the handle with
     /// [`crate::CodeEditorHandle::edit_group`], with whether it went in whole or why it
     /// stayed out. Left out, the Renderer is not asked to report it.
@@ -3993,6 +5278,13 @@ pub fn CodeEditor(
     #[props(default)] shape_role: Option<ShapeRole>,
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
+    #[props(default)] size_in: Option<SizeIn>,
+    #[props(default)] aspect_ratio: Option<f32>,
+    #[props(default)] match_height_constraints_first: bool,
+    #[props(default)] min_touch_target: Option<f32>,
+    #[props(default)] overlay: Option<Paint>,
+    #[props(default)] sticky: bool,
+    #[props(default)] unbounded_width: bool,
     #[props(default)] semantics: Option<Semantics>,
     #[props(into, default)] accessible_name: Option<String>,
     #[props(default)] border_width: Option<f32>,
@@ -4070,6 +5362,12 @@ pub fn CodeEditor(
             minimap: opt_role(minimap),
             view_zones: (!view_zones.is_empty()).then(|| AttributeValue::any_value(view_zones)),
             word_wrap: word_wrap.map(compose_rust::code::WordWrap::to_value),
+            content_padding_dp: content_padding_dp
+                .or(content_padding_top_dp.map(|top| (top, 0.0)))
+                .map(|(top, bottom)| compose_rust::code::ContentPadding::new(top, bottom))
+                .filter(|padding| !padding.is_empty())
+                .map(AttributeValue::any_value),
+            fixed_gutter_columns: fixed_gutter_columns.then_some(true),
             oneditgroupresult: optional_listener(on_edit_group_result, |result: &compose_rust::code::EditGroupResult| *result),
             onselectionschange: optional_listener(on_selections_change, |change: &compose_rust::code::SelectionsChange| change.clone()),
             type_role: opt_role(type_role),
@@ -4085,6 +5383,12 @@ pub fn CodeEditor(
             shape_role: opt_role(shape_role),
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
+            size_in: size_in.map(SizeIn::attribute),
+            aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
+            min_touch_target: opt_dp(min_touch_target),
+            overlay: opt_paint(overlay),
+            sticky: sticky.then_some(true),
+            unbounded_width: unbounded_width.then_some(true),
             semantics: semantics.map(Semantics::attribute),
             accessible_name,
             border_width: opt_dp(border_width),

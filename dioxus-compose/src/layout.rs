@@ -87,6 +87,34 @@ pub(crate) fn is_fixed(node: &Node) -> bool {
         .is_some_and(|style| style.clone_position() == Position::Fixed)
 }
 
+/// Whether a box is `position: sticky`. Its CSS insets clamp its painted position against
+/// the nearest scroll container rather than shifting its normal-flow layout position.
+pub(crate) fn is_sticky(node: &Node) -> bool {
+    node.primary_styles()
+        .is_some_and(|style| style.clone_position() == Position::Sticky)
+}
+
+/// Clears Taffy's relative insets on `position: sticky` boxes before layout so they sit at
+/// their normal-flow positions; their CSS insets are applied when clamping against the
+/// scroll viewport during display list construction.
+fn clear_sticky_insets(doc: &mut BaseDocument) {
+    let sticky: Vec<usize> = doc
+        .tree()
+        .iter()
+        .filter_map(|(id, node)| is_sticky(node).then_some(id))
+        .collect();
+    for id in sticky {
+        if let Some(node) = doc.get_node_mut(id) {
+            node.style.inset = Rect {
+                left: taffy::LengthPercentageAuto::auto(),
+                right: taffy::LengthPercentageAuto::auto(),
+                top: taffy::LengthPercentageAuto::auto(),
+                bottom: taffy::LengthPercentageAuto::auto(),
+            };
+        }
+    }
+}
+
 /// Whether `id` is a replaced element or a form control, whose `auto` width is its own
 /// size (from its attributes, its image or the widget it stands for) rather than the
 /// width of anything it contains.
@@ -773,6 +801,7 @@ fn run_layout_pass(
     size_selects_in_lines(doc, measurer);
     size_widgets(doc);
     size_image_fallbacks(doc, measurer);
+    clear_sticky_insets(doc);
 
     let mut texts = HashMap::new();
     let mut tree = MeasuredTree {
@@ -1346,6 +1375,84 @@ impl MeasuredTree<'_> {
                 continue;
             }
             self.compute_child_layout(NodeId::from(box_id), child_inputs);
+        }
+    }
+
+    /// Measures every inline formatting context inside a table that blitz-dom laid out on
+    /// its own, at the content width the table gave its box.
+    ///
+    /// blitz-dom's `TableTreeWrapper` walks a table's cells through `BaseDocument` rather
+    /// than this tree, so `compute_measured` never sees them. On targets where Parley has no
+    /// system fonts (`wasm32-unknown-unknown`), blitz-dom shapes zero glyph runs for those
+    /// cells and the display list would have no text to draw. Measuring each inline root in
+    /// the table subtree after the table's final pass records its `MeasuredText` with the
+    /// caller's [`TextMeasurer`], at the cell's settled content width.
+    fn measure_table_texts(&mut self, table_id: usize) {
+        let mut stack = vec![table_id];
+        while let Some(id) = stack.pop() {
+            let Some(node) = self.doc.get_node(id) else {
+                continue;
+            };
+            if node.style.display == Display::None {
+                continue;
+            }
+            if id != table_id && node.flags.is_table_root() {
+                continue;
+            }
+            let children = node.children.clone();
+            if node.flags.is_inline_root() {
+                let layout = node.unrounded_layout;
+                let content_width = (layout.size.width
+                    - layout.padding.left
+                    - layout.padding.right
+                    - layout.border.left
+                    - layout.border.right)
+                    .max(0.0);
+                if let Some(Some(prepared)) = prepare_inline(&*self.doc, id) {
+                    let constraint = if !prepared.white_space.wrap {
+                        WidthConstraint::MaxContent
+                    } else {
+                        WidthConstraint::AtMost(content_width)
+                    };
+                    let mut metrics = self.measurer.measure_spans(
+                        &TextMeasureRequest {
+                            text: &prepared.text,
+                            style: &prepared.style,
+                            width: constraint,
+                            white_space: prepared.white_space,
+                        },
+                        &prepared.spans,
+                    );
+                    if let (TextAlign::Justify, WidthConstraint::AtMost(width)) =
+                        (prepared.align, constraint)
+                        && metrics.line_count > 1
+                        && !prepared.text.contains('\n')
+                    {
+                        metrics.width = metrics.width.max(width);
+                    }
+                    let wrap_width = match constraint {
+                        WidthConstraint::AtMost(width) => Some(width),
+                        WidthConstraint::MinContent => Some(metrics.width),
+                        WidthConstraint::MaxContent => None,
+                    };
+                    self.texts.insert(
+                        id,
+                        MeasuredText {
+                            owner: prepared.owner,
+                            text: prepared.text,
+                            style: prepared.style,
+                            color: prepared.color,
+                            decoration: prepared.decoration,
+                            align: prepared.align,
+                            metrics,
+                            wrap_width,
+                            marker_prefix: prepared.marker_prefix,
+                            spans: prepared.spans,
+                        },
+                    );
+                }
+            }
+            stack.extend(children);
         }
     }
 
@@ -2418,6 +2525,31 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
     let Some(&first) = holders.first() else {
         return Some(None);
     };
+    let owner = common_ancestor(doc, root, &holders);
+    let handled = |holder: usize| {
+        LISTENING.with(|listening| listening.borrow().contains(&holder))
+            || doc.get_node(holder).is_some_and(|node| {
+                node.element_data()
+                    .is_some_and(|element| &*element.name.local == "a")
+                    && node.attr(local("href")).is_some()
+            })
+    };
+    let interactive_owner = |holder: usize| -> Option<usize> {
+        let mut current = Some(holder);
+        while let Some(id) = current {
+            if id == owner || id == root {
+                return None;
+            }
+            if handled(id) {
+                return Some(id);
+            }
+            current = doc.get_node(id).and_then(|node| node.parent);
+        }
+        None
+    };
+    let has_interactive_span = holders
+        .iter()
+        .any(|&holder| interactive_owner(holder).is_some());
 
     let styled = |id: usize| {
         doc.get_node(id)
@@ -2506,32 +2638,9 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
         .as_ref()
         .map_or_else(String::new, |marker| format!("{} ", marker.text));
 
-    let (body, spans) = if uniform {
+    let (body, spans) = if uniform && !has_interactive_span {
         (convert::transform_text(&text, transform), Vec::new())
     } else {
-        // A press on a piece of a text drawn as one is the renderer's to report, by the
-        // span it lands on, and the page does not register spans for the renderer to
-        // report yet. Until it does, a link inside the text stays with the fallback
-        // shaper, which draws it as a run of its own that a click reaches.
-        let handled = |holder: usize| {
-            LISTENING.with(|listening| listening.borrow().contains(&holder))
-                || doc.get_node(holder).is_some_and(|node| {
-                    node.element_data()
-                        .is_some_and(|element| &*element.name.local == "a")
-                        && node.attr(local("href")).is_some()
-                })
-        };
-        if holders
-            .iter()
-            .any(|&holder| holder != root && handled(holder))
-        {
-            warn_unspanned(
-                doc,
-                root,
-                "holds an element with an event handler or a link among text in other styles, and an event on a piece of a text drawn as one is not routed to that element",
-            );
-            return None;
-        }
         let known = |holder: usize| helds.contains_key(&holder);
         let Some(segments) = inline_spans::align(own_text, &content.pieces, collapses, &known)
         else {
@@ -2543,7 +2652,14 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
             return None;
         };
         let segments = inline_spans::clip(segments, lead..lead + text.len());
-        match inline_spans::build(&text, &segments, &helds, &base, marker_prefix.len()) {
+        match inline_spans::build(
+            &text,
+            &segments,
+            &helds,
+            &base,
+            marker_prefix.len(),
+            &interactive_owner,
+        ) {
             Ok(built) => built,
             Err(reason) => {
                 warn_unspanned(doc, root, reason);
@@ -2566,6 +2682,11 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
                 line_through: false,
                 color: Some(Rgba::new(0, 0, 0, 0)),
                 font_family: None,
+                font_size: None,
+                font_weight: None,
+                letter_spacing: None,
+                line_height: None,
+                owner: None,
             }];
             hidden.extend(spans);
             hidden
@@ -2574,7 +2695,7 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
     };
 
     Some(Some(PreparedText {
-        owner: common_ancestor(doc, root, &holders),
+        owner,
         text: format!("{marker_prefix}{body}"),
         style,
         color,
@@ -2588,8 +2709,8 @@ fn prepare_inline(doc: &BaseDocument, root: usize) -> Option<Option<PreparedText
 
 thread_local! {
     /// The nodes the page has event listeners on, set by the document before it lays out.
-    /// An element that listens inside a text drawn as one would lose its events, since the
-    /// renderer reports a press on the text and not on a piece of it.
+    /// Inline elements in this set keep their own span owner inside a single spanned text
+    /// run so clicks and hit-testing route to them.
     static LISTENING: std::cell::RefCell<HashSet<usize>> = std::cell::RefCell::new(HashSet::new());
 }
 
@@ -2917,11 +3038,20 @@ impl LayoutPartialTree for MeasuredTree<'_> {
                 Route::Select => tree.compute_select(id, inputs),
                 Route::Blitz => {
                     tree.pre_measure_inline_boxes(node_id, inputs);
-                    <BaseDocument as LayoutPartialTree>::compute_child_layout(
+                    let output = <BaseDocument as LayoutPartialTree>::compute_child_layout(
                         &mut *tree.doc,
                         node_id,
                         inputs,
-                    )
+                    );
+                    if inputs.run_mode == RunMode::PerformLayout
+                        && tree
+                            .doc
+                            .get_node(id)
+                            .is_some_and(|node| node.flags.is_table_root())
+                    {
+                        tree.measure_table_texts(id);
+                    }
+                    output
                 }
                 Route::Measured(prepared) => tree.compute_measured(id, prepared, inputs),
                 Route::Block => {

@@ -23,7 +23,9 @@
 //! belongs to the renderer's text field and never reaches the Host, so it is checked by
 //! hand on the native-image build, following the manual IME checklist.
 
-use dioxus_compose::html::{HtmlDom, InputKind, LiteralColours, Plan, PlanKey, PlanKind};
+use dioxus_compose::html::{
+    HtmlDom, InputKind, LiteralColours, NodeId, Plan, PlanKey, PlanKind, PlanModifier, PlanNode,
+};
 use sample_html_settings as settings;
 use sample_html_support::{Measurer, assert_rect, centre, config, entry, node, plan_node, text_of};
 
@@ -429,4 +431,109 @@ fn fr34_settings_typing_and_enter_save_the_form() {
             ..
         }
     ));
+}
+
+/// The page fits a narrow phone screen: 407 by 990, the width of a 1080 pixel screen at a
+/// density of 2.65. Every display list box (that draws) and every plan slot ends at or
+/// before x = 407, so nothing sticks in from the right edge.
+#[test]
+fn fr34_settings_lays_out_inside_a_narrow_viewport() {
+    const WIDTH: f32 = 407.0;
+    const HEIGHT: f32 = 990.0;
+    let mut dom = HtmlDom::with_config(settings::app, config(settings::STYLE, Measurer::new()));
+    dom.layout(WIDTH, HEIGHT, 1.0);
+
+    let describe = |dom: &HtmlDom, id: Option<NodeId>| -> String {
+        let Some(id) = id else {
+            return "the page".to_string();
+        };
+        let Some(node) = dom.document().get_node(id) else {
+            return format!("node {id}");
+        };
+        let tag = node
+            .element_data()
+            .map(|data| data.name.local.to_string())
+            .unwrap_or_else(|| "#text".to_string());
+        let attr = |name: &str| {
+            node.attrs()
+                .and_then(|attrs| attrs.iter().find(|a| &*a.name.local == name))
+                .map(|a| a.value.clone())
+                .unwrap_or_default()
+        };
+        format!(
+            "node {id} <{tag} id=\"{}\" class=\"{}\">",
+            attr("id"),
+            attr("class")
+        )
+    };
+
+    let mut offenders = Vec::new();
+    let list = dom.display_list().expect("laid out above");
+    for entry in &list.entries {
+        if !entry.visible {
+            continue;
+        }
+        if entry.rect.right() > WIDTH + 0.01 {
+            offenders.push(format!(
+                "display list: {} rect {:?}",
+                describe(&dom, Some(entry.node)),
+                entry.rect
+            ));
+        }
+        for run in &entry.texts {
+            if run.rect.right() > WIDTH + 0.01 {
+                offenders.push(format!(
+                    "text run of {} rect {:?}",
+                    describe(&dom, Some(entry.node)),
+                    run.rect
+                ));
+            }
+        }
+    }
+
+    // Plan slots are placed relative to their parent: add the offsets up to get each
+    // slot's place on the page. A scroll container's content is meant to be wider than
+    // its viewport, so nothing inside a scroll viewport is counted.
+    fn walk(node: &PlanNode, origin: (f32, f32), out: &mut Vec<(PlanKey, f32, f32, f32, f32)>) {
+        let mut x = origin.0;
+        let mut y = origin.1;
+        let mut size = None;
+        for modifier in &node.modifiers {
+            match *modifier {
+                PlanModifier::Offset { x: dx, y: dy } => {
+                    x += dx;
+                    y += dy;
+                }
+                PlanModifier::RequiredSize { width, height } => size = Some((width, height)),
+                PlanModifier::Width(width) => size = Some((width, 0.0)),
+                _ => {}
+            }
+        }
+        if let Some((width, height)) = size {
+            out.push((node.key, x, y, width, height));
+        }
+        if matches!(node.kind, PlanKind::ScrollRow | PlanKind::ScrollColumn) {
+            return;
+        }
+        for child in &node.children {
+            walk(child, (x, y), out);
+        }
+    }
+    let plan = dom.plan(&mut LiteralColours).expect("laid out above");
+    let mut slots = Vec::new();
+    walk(&plan.root, (0.0, 0.0), &mut slots);
+    for (key, x, y, width, height) in slots {
+        if x + width > WIDTH + 0.01 {
+            offenders.push(format!(
+                "plan slot {key:?} of {}: x {x}, y {y}, width {width}, height {height}",
+                describe(&dom, key.node())
+            ));
+        }
+    }
+
+    assert!(
+        offenders.is_empty(),
+        "these reach past the right edge of a {WIDTH}px wide viewport:\n{}",
+        offenders.join("\n")
+    );
 }

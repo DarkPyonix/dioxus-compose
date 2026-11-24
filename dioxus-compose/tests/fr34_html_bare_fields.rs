@@ -3,10 +3,10 @@
 //! or `Dropdown` inside the content box draws nothing of its own around the text.
 //!
 //! The renderer paints the design system's field frame (a fill, a line, a pill shape, room
-//! inside, and a wheel for a dropdown on Apple systems) unless the node names its own. Each
-//! test runs an app through a Host and reads what the renderer would receive: the field
-//! names a transparent fill, a line of no width, square corners and no room inside, and
-//! sets its text in the CSS colour and font rather than a type role of the design system.
+//! inside, and a wheel for a dropdown on Apple systems) unless the node asks to be bare.
+//! Each test runs an app through a Host and reads what the renderer would receive: the
+//! field sets `PropertyKind::Bare` to `true`, injects no stand-in frame modifiers, and sets
+//! its text in the CSS colour and font rather than a type role of the design system.
 //!
 //! Text is sized by a measurer that gives every character 10px and every line 20px.
 
@@ -165,37 +165,30 @@ fn prop(records: &[Record], node: u32, property: PropertyKind) -> Option<Value> 
     })
 }
 
-fn transparent() -> Paint {
-    Paint::Literal(Color::argb(0))
-}
-
 fn text_colour() -> i64 {
     Paint::Literal(Color::argb(0xff0a_141e)).to_bits() as i64
 }
 
-/// The modifiers that tell the renderer's field to draw no frame of its own: a fill it
-/// cannot see, a line of no width, square corners and no room inside.
+/// Asserts that the field asks the renderer for a bare field via `PropertyKind::Bare`
+/// rather than injecting stand-in background, border, shape or padding modifiers.
 #[track_caller]
 fn assert_bare(records: &[Record], node: u32, what: &str) {
+    assert_eq!(
+        prop(records, node, PropertyKind::Bare),
+        Some(Value::Bool(true)),
+        "the {what} asks the renderer for a bare field"
+    );
     let modifiers = modifiers_of(records, node);
-    let bare = [
-        Modifier::Background(transparent()),
-        Modifier::Border {
-            width: 0.0,
-            paint: transparent(),
-        },
-        Modifier::Shape {
-            top_start: 0.0,
-            top_end: 0.0,
-            bottom_end: 0.0,
-            bottom_start: 0.0,
-        },
-        Modifier::Padding(0.0),
-    ];
-    for modifier in bare {
+    for modifier in &modifiers {
         assert!(
-            modifiers.contains(&modifier),
-            "the {what} names {modifier:?} so the design system draws no frame: {modifiers:#?}"
+            !matches!(
+                modifier,
+                Modifier::Background(_)
+                    | Modifier::Border { .. }
+                    | Modifier::Shape { .. }
+                    | Modifier::Padding(_)
+            ),
+            "the {what} does not inject stand-in frame modifiers: {modifiers:#?}"
         );
     }
     assert!(

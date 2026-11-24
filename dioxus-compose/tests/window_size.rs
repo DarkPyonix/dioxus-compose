@@ -61,10 +61,10 @@ fn resize(host: &mut Host, width_dp: f32) -> Vec<String> {
 }
 
 fn resize_to(host: &mut Host, width_dp: f32, height_dp: f32) -> Vec<String> {
-    let event = HostEvent {
-        node_id: 0,
-        handler_id: 0,
-        payload: EventPayload::WindowSizeChanged {
+    let event = HostEvent::new(
+        0,
+        0,
+        EventPayload::WindowSizeChanged {
             width_dp,
             height_dp,
             class: WindowSizeClass::from_width_dp(width_dp),
@@ -72,8 +72,9 @@ fn resize_to(host: &mut Host, width_dp: f32, height_dp: f32) -> Vec<String> {
             safe_area_leading: 0.0,
             safe_area_top: 0.0,
             safe_area_trailing: 0.0,
+            safe_area_bottom: 0.0,
         },
-    };
+    );
     let (batch, _) = host.dispatch(event).unwrap();
     decode_batch(batch)
         .unwrap()
