@@ -696,9 +696,15 @@ pub mod elements {
             collapse_below
         ]
     );
-    // Children laid where the Host put them, each at its own `offset`. Nothing of its own:
-    // where a child goes is the child's modifier, not the box's property.
-    element!(absolutebox, "AbsoluteBox", [island_zoom]);
+    // Children laid where the Host put them, each at its own `offset`: where a child goes is
+    // the child's modifier, not the box's property. `observe_size_every_dp` is
+    // `observe_size` reported at every dp the box changes by rather than at a change of size
+    // class, for a box whose content is laid out at the exact width, as an `HtmlView` is.
+    element!(
+        absolutebox,
+        "AbsoluteBox",
+        [island_zoom, observe_size_every_dp]
+    );
     // The editor's own attributes. Its text and its colouring cross the boundary as the
     // Host writes them, and its events are declared on the element in widgets.rs.
     element!(

@@ -293,7 +293,9 @@ pub fn HtmlView(
     set_width(token, size.measured().width_dp);
     rsx! {
         absolutebox {
-            observe_size: size.token(),
+            // Every width, not only a change of size class: the page is laid out at the
+            // width it is given, and 1280dp and 900dp are both Expanded.
+            observe_size_every_dp: size.token(),
             island_zoom: f64::from(if zoom.k.is_finite() && zoom.k > 0.0 { zoom.k } else { 1.0 }),
             weight: weight.map(f64::from),
             width: width.map(f64::from),

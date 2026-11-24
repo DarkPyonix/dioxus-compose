@@ -755,7 +755,7 @@ impl ComposeRenderer {
             "border_width" | "border_color" => Some(BORDER),
             "elevation" => Some(ELEVATION),
             "padding" | "padding_role" => Some(PADDING),
-            "observe_size" => Some(OBSERVE_SIZE),
+            "observe_size" | "observe_size_every_dp" => Some(OBSERVE_SIZE),
             "motion" => Some(MOTION),
             "material" => Some(MATERIAL),
             "offset" => Some(OFFSET),
@@ -808,14 +808,14 @@ impl ComposeRenderer {
             // The token is the application's name for this node, and it stays here: what
             // the Renderer reports back is its own node id, so the pairing has to be
             // remembered at the moment the two are both in hand.
-            "observe_size" => {
+            "observe_size" | "observe_size_every_dp" => {
                 let token = u32::try_from(integer(value)?).ok()?;
                 self.size_tokens.insert(node_id, token);
                 Some(Some((
                     slot,
                     Modifier::ObserveSize {
                         token,
-                        every_dp: false,
+                        every_dp: name == "observe_size_every_dp",
                     },
                 )))
             }
