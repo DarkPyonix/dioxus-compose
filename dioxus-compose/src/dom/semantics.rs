@@ -9,6 +9,14 @@
 //! An element that says nothing of the kind is left alone: the renderer then derives what it
 //! can from the widget the element becomes (a clickable box is still a button, a run of text
 //! is still text).
+//!
+//! `aria-modal="true"`, and a `<dialog>` opened with `showModal()`, make the element a modal:
+//! while it is open, nothing outside it is in the accessibility tree. A `<dialog open>` that
+//! was not opened with `showModal()` is not modal, as in a browser.
+//!
+//! `aria-activedescendant` names, by `id`, the option a combobox's keys point at while the
+//! focus stays on the combobox. It is resolved to the element with that `id` here, and to
+//! that element's renderer node where the page is sent.
 
 use blitz_dom::{BaseDocument, NodeData};
 use compose_rust::schema::SemanticsRole;
@@ -25,6 +33,8 @@ pub struct NodeSemantics {
     pub(crate) semantics: Semantics,
     /// The accessible name; `None` when the element has none to give.
     pub(crate) label: Option<String>,
+    /// The element `aria-activedescendant` names, when there is one with that `id`.
+    pub(crate) active_descendant: Option<NodeId>,
 }
 
 fn role_of_word(word: &str) -> Option<SemanticsRole> {
@@ -42,8 +52,11 @@ fn role_of_word(word: &str) -> Option<SemanticsRole> {
         "textbox" | "searchbox" => SemanticsRole::TextBox,
         "heading" => SemanticsRole::Heading,
         "navigation" => SemanticsRole::Navigation,
-        "list" | "listbox" => SemanticsRole::List,
-        "listitem" | "option" => SemanticsRole::ListItem,
+        "combobox" => SemanticsRole::ComboBox,
+        "listbox" => SemanticsRole::ListBox,
+        "option" => SemanticsRole::Option,
+        "list" => SemanticsRole::List,
+        "listitem" => SemanticsRole::ListItem,
         "group" | "dialog" | "alertdialog" | "region" | "toolbar" => SemanticsRole::Group,
         "img" | "image" => SemanticsRole::Image,
         _ => return None,
@@ -86,6 +99,7 @@ fn named_by_content(role: SemanticsRole) -> bool {
             | SemanticsRole::MenuItem
             | SemanticsRole::Heading
             | SemanticsRole::ListItem
+            | SemanticsRole::Option
     )
 }
 
@@ -100,14 +114,17 @@ fn aria_bool(value: Option<String>) -> Option<bool> {
 }
 
 /// The semantics of an element with tag `tag` and attributes read through `attr`.
-/// `takes_clicks` is whether a click on it does anything, which exposes the click action, and
-/// `content` gives the element's text when its role takes its name from it. `None` when the
-/// element names nothing: no role, no name, no state.
+/// `takes_clicks` is whether a click on it does anything, which exposes the click action,
+/// `content` gives the element's text when its role takes its name from it, `shown_modal`
+/// is whether it is a `<dialog>` opened with `showModal()`, and `by_id` finds the element an
+/// `id` names. `None` when the element names nothing: no role, no name, no state.
 pub(crate) fn semantics_for(
     tag: &str,
     attr: &dyn Fn(&str) -> Option<String>,
     takes_clicks: bool,
     content: &dyn Fn() -> String,
+    shown_modal: bool,
+    by_id: &dyn Fn(&str) -> Option<NodeId>,
 ) -> Option<NodeSemantics> {
     let explicit = attr("role").and_then(|roles| {
         roles
@@ -130,11 +147,18 @@ pub(crate) fn semantics_for(
     let checked = aria_bool(attr("aria-checked")).or_else(|| attr("checked").map(|_| true));
     let disabled = aria_bool(attr("aria-disabled")).or_else(|| attr("disabled").map(|_| true));
     let hidden = aria_bool(attr("aria-hidden")) == Some(true);
+    let modal = shown_modal || aria_bool(attr("aria-modal")) == Some(true);
+    let active_descendant = attr("aria-activedescendant")
+        .map(|id| id.trim().to_string())
+        .filter(|id| !id.is_empty())
+        .and_then(|id| by_id(&id));
     let stated = expanded.is_some()
         || selected.is_some()
         || checked.is_some()
         || disabled.is_some()
-        || hidden;
+        || hidden
+        || modal
+        || active_descendant.is_some();
     if role.is_none() && label.is_none() && !stated {
         return None;
     }
@@ -146,9 +170,11 @@ pub(crate) fn semantics_for(
     state.expanded = expanded;
     state.disabled = disabled;
     state.click_action = takes_clicks;
+    state.modal = modal;
     Some(NodeSemantics {
         semantics: Semantics { role, state },
         label,
+        active_descendant,
     })
 }
 
@@ -190,6 +216,12 @@ impl HtmlDom {
         let tag = data.name.local.as_ref().to_ascii_lowercase();
         let attr = |name: &str| element.attr(local(name)).map(str::to_string);
         let content = || text_content(&self.doc, node);
-        semantics_for(&tag, &attr, takes_clicks, &content)
+        // A dialog stays modal only while it is open: a page that takes `open` away has
+        // closed it.
+        let shown_modal = tag == "dialog"
+            && self.modal_dialogs.contains(&node)
+            && element.attr(local("open")).is_some();
+        let by_id = |id: &str| self.element_by_id(id);
+        semantics_for(&tag, &attr, takes_clicks, &content, shown_modal, &by_id)
     }
 }

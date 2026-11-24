@@ -287,6 +287,16 @@ pub struct ComposeRenderer {
     modifier_slots: HashMap<u32, [&'static str; MODIFIER_SLOTS]>,
     /// Which application token each observed node was given, for reading a report back.
     size_tokens: HashMap<u32, u32>,
+    /// The `descendant_key` of each node that has one: the application's name for it, which
+    /// an `active_descendant` elsewhere uses to point at it.
+    descendant_keys: HashMap<u32, String>,
+    /// The key each node's `active_descendant` names.
+    active_wanted: HashMap<u32, String>,
+    /// The node each `ActiveDescendant` property was last sent as.
+    active_sent: HashMap<u32, u32>,
+    /// A key, a pointer or a keyed node changed since the last frame, so the pointers are
+    /// resolved again. A frame where none did costs nothing.
+    descendants_dirty: bool,
     /// For each `Text` whose string is marked as growing, how many bytes the Renderer holds
     /// and a keyed hash of them.
     ///
@@ -488,6 +498,11 @@ impl ComposeRenderer {
             // Empty until a screen asks, which is the point: a tree that observes nothing
             // allocates nothing here.
             size_tokens: HashMap::new(),
+            // Empty until a screen names an active descendant, for the same reason.
+            descendant_keys: HashMap::new(),
+            active_wanted: HashMap::new(),
+            active_sent: HashMap::new(),
+            descendants_dirty: false,
             // Empty until a growing string or a link run arrives, for the same reason.
             sent_text: HashMap::new(),
             text_hasher: RandomState::new(),
@@ -522,8 +537,80 @@ impl ComposeRenderer {
     }
 
     pub fn finish_frame(&mut self) -> Result<&[u8], ProtocolError> {
+        self.sync_active_descendants();
         self.check_windows();
         self.batch.finish()
+    }
+
+    /// Records a node's `descendant_key` or `active_descendant`. An empty string, or the
+    /// attribute taken away, is none.
+    fn set_descendant_attribute(&mut self, node_id: u32, name: &str, value: &AttributeValue) {
+        let key = match value {
+            AttributeValue::Text(text) if !text.is_empty() => Some(text.as_str()),
+            _ => None,
+        };
+        let map = if name == "descendant_key" {
+            &mut self.descendant_keys
+        } else {
+            &mut self.active_wanted
+        };
+        if map.get(&node_id).map(String::as_str) == key {
+            return;
+        }
+        match key {
+            Some(key) => {
+                map.insert(node_id, key.to_string());
+            }
+            None => {
+                map.remove(&node_id);
+            }
+        }
+        self.descendants_dirty = true;
+    }
+
+    /// Sends each `active_descendant` as the renderer node of the widget whose
+    /// `descendant_key` it names, the way `aria-activedescendant` names an element by its
+    /// `id`. While no widget has that key the property is cleared. Only a change is sent.
+    /// When two widgets share a key, the one created first is named.
+    pub(crate) fn sync_active_descendants(&mut self) {
+        if !std::mem::take(&mut self.descendants_dirty) {
+            return;
+        }
+        let mut changes: Vec<(u32, Option<u32>)> = Vec::new();
+        for (&owner, key) in &self.active_wanted {
+            let target = self
+                .descendant_keys
+                .iter()
+                .filter(|(_, named)| *named == key)
+                .map(|(&node, _)| node)
+                .min();
+            if self.active_sent.get(&owner).copied() != target {
+                changes.push((owner, target));
+            }
+        }
+        for &owner in self.active_sent.keys() {
+            if !self.active_wanted.contains_key(&owner) {
+                changes.push((owner, None));
+            }
+        }
+        changes.sort_unstable();
+        for (node_id, target) in changes {
+            match target {
+                Some(target) => {
+                    self.active_sent.insert(node_id, target);
+                }
+                None => {
+                    self.active_sent.remove(&node_id);
+                }
+            }
+            self.write(Mutation::SetProp {
+                node_id,
+                property: PropertyKind::ActiveDescendant,
+                value: target.map_or(PropertyValue::None, |target| {
+                    PropertyValue::Integer(i64::from(target))
+                }),
+            });
+        }
     }
 
     pub fn handler(&self, handler_id: u64) -> Option<(ElementId, u32, &'static str)> {
@@ -1411,6 +1498,10 @@ impl ComposeRenderer {
         name: &str,
         value: &AttributeValue,
     ) {
+        if name == "descendant_key" || name == "active_descendant" {
+            self.set_descendant_attribute(node_id, name, value);
+            return;
+        }
         if self.windows.contains(&node_id) && name == "theme" {
             if let AttributeValue::Any(any) = value
                 && let Some(theme) = any.as_any().downcast_ref::<compose_rust::schema::Theme>()
@@ -1957,6 +2048,13 @@ impl ComposeRenderer {
     /// The caller has already taken the node out of its parent's list.
     fn forget(&mut self, node_id: u32) {
         self.parents.remove(&node_id);
+        // A node that is gone sends nothing more, and a pointer at it is cleared.
+        let keyed = self.descendant_keys.remove(&node_id).is_some();
+        let pointing = self.active_wanted.remove(&node_id).is_some();
+        if keyed || pointing {
+            self.descendants_dirty = true;
+        }
+        self.active_sent.remove(&node_id);
         self.sent_text.remove(&node_id);
         if self.windows.remove(&node_id) {
             self.forgotten_windows.push(node_id);

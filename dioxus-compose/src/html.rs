@@ -82,9 +82,9 @@ mod scroll;
 pub type NodeId = usize;
 
 pub use crate::dom::{
-    AppRegion, ClipboardEventData, Cursor, HtmlConfig, HtmlDom, KeyInput, PointerInput,
-    PointerKind, PointerSubscription, PointerType, ScrollPosition, TransitionEventData, UserSelect,
-    WheelMode, element_by_id,
+    AppRegion, ClipboardEventData, Cursor, DialogElement, HtmlConfig, HtmlDom, KeyInput,
+    PointerInput, PointerKind, PointerSubscription, PointerType, ScrollPosition,
+    TransitionEventData, UserSelect, WheelMode, element_by_id,
 };
 pub use crate::html_widget::{WidgetView, WidgetViewProps};
 pub use crate::layout::image::{AssetId, ImageResolver, ImageSize};
@@ -167,8 +167,8 @@ pub fn layout_document_with(
 /// takes one or the other.
 pub mod prelude {
     pub use super::{
-        AssetId, ClipboardEventData, HtmlConfig, HtmlDom, ImageResolver, ImageSize, KeyInput,
-        TransitionEventData, WidgetView, launch, onanimationcancel, ontransitioncancel,
+        AssetId, ClipboardEventData, DialogElement, HtmlConfig, HtmlDom, ImageResolver, ImageSize,
+        KeyInput, TransitionEventData, WidgetView, launch, onanimationcancel, ontransitioncancel,
         ontransitionrun, ontransitionstart, transition,
     };
     pub use crate::hooks::use_zoom;

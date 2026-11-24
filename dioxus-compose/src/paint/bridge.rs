@@ -301,6 +301,10 @@ struct Placed {
     /// What a text field shows: the last value the Host sent or the user typed, whichever
     /// came last.
     shown: String,
+    /// The element the node's `aria-activedescendant` names. Which renderer node that is
+    /// is worked out after the whole plan is placed, since the option is often placed after
+    /// the combobox that points at it.
+    active_descendant: Option<NodeId>,
 }
 
 impl Placed {
@@ -370,6 +374,9 @@ pub struct PlanBridge {
     /// has a pinned identity modifier, and compose-rust turns the animated matrix about
     /// that modifier's origin, so it is given this one.
     pin_origins: HashMap<PlanKey, (f32, f32)>,
+    /// The nodes that carry an `aria-activedescendant`, so the pass that sends which
+    /// renderer node each one names looks at these and not at every node.
+    descendant_owners: HashSet<PlanKey>,
 }
 
 impl Default for PlanBridge {
@@ -412,6 +419,7 @@ impl PlanBridge {
             pins: HashMap::new(),
             canvas_source: None,
             pin_origins: HashMap::new(),
+            descendant_owners: HashSet::new(),
         }
     }
 
@@ -700,6 +708,7 @@ impl PlanBridge {
         }
         self.sync_zoom(viewport, batch);
         self.sync_pointer(batch, clicks);
+        self.sync_active_descendants(batch);
         self.previous = Some(plan);
     }
 
@@ -1155,6 +1164,7 @@ impl PlanBridge {
                 keys: None,
                 pointer: None,
                 shown: String::new(),
+                active_descendant: None,
             },
         );
         let next_inherited = match &node.kind {
@@ -1271,6 +1281,7 @@ impl PlanBridge {
         };
         self.pins.remove(&key);
         self.pin_origins.remove(&key);
+        self.descendant_owners.remove(&key);
         for running in self.playing.remove(&key).unwrap_or_default() {
             // The cancel is addressed to the removed node itself and to nothing above it: a
             // browser does not bubble an event from a detached element. The page has
@@ -1283,6 +1294,31 @@ impl PlanBridge {
         for child in placed.children {
             self.forget(child);
         }
+    }
+
+    /// Sends each `aria-activedescendant` as the renderer node of the element it names, and
+    /// clears it while that element is not drawn as a node of its own. A property that
+    /// already says the same is not sent again, so only a change goes out.
+    fn sync_active_descendants(&mut self, batch: &mut Batch) {
+        if self.descendant_owners.is_empty() {
+            return;
+        }
+        let owners = std::mem::take(&mut self.descendant_owners);
+        for &key in &owners {
+            let Some(target) = self
+                .nodes
+                .get(&key)
+                .and_then(|placed| placed.active_descendant)
+            else {
+                continue;
+            };
+            let value = self
+                .nodes
+                .get(&PlanKey::Node(target))
+                .map_or(Prop::None, |placed| Prop::Int(i64::from(placed.id)));
+            self.set_prop(batch, key, PropertyKind::ActiveDescendant, value);
+        }
+        self.descendant_owners = owners;
     }
 
     /// Puts the children `parent` kept into `order`, moving as few as it takes.
@@ -1908,10 +1944,25 @@ impl PlanBridge {
 
         // The accessible name travels as a property of its own: a string does not fit in a
         // modifier's words. An element that lost its name sends none.
-        let label = semantics
-            .and_then(|semantics| semantics.label)
-            .map_or(Prop::None, Prop::Str);
-        self.set_prop(batch, key, PropertyKind::AccessibleName, label);
+        let (label, active_descendant) = semantics.map_or((None, None), |semantics| {
+            (semantics.label, semantics.active_descendant)
+        });
+        self.set_prop(
+            batch,
+            key,
+            PropertyKind::AccessibleName,
+            label.map_or(Prop::None, Prop::Str),
+        );
+        // Which renderer node the element names is sent by `sync_active_descendants`, once
+        // every node of the plan is placed. One that no longer names any is cleared here.
+        if let Some(placed) = self.nodes.get_mut(&key) {
+            placed.active_descendant = active_descendant;
+        }
+        if active_descendant.is_some() {
+            self.descendant_owners.insert(key);
+        } else if self.descendant_owners.remove(&key) {
+            self.set_prop(batch, key, PropertyKind::ActiveDescendant, Prop::None);
+        }
 
         let specs = self.layer_specs(node);
         let Some(placed) = self.nodes.get_mut(&key) else {
@@ -2098,9 +2149,13 @@ fn semantics_changed(placed: &Placed, node: &PlanNode, clicks: &dyn ClickTargets
             _ => None,
         });
     match now {
-        None => sent_modifier.is_some() || sent_name.is_some(),
+        None => {
+            sent_modifier.is_some() || sent_name.is_some() || placed.active_descendant.is_some()
+        }
         Some(now) => {
-            sent_modifier != Some(&now.semantics.to_modifier()) || sent_name != now.label.as_deref()
+            sent_modifier != Some(&now.semantics.to_modifier())
+                || sent_name != now.label.as_deref()
+                || placed.active_descendant != now.active_descendant
         }
     }
 }

@@ -220,6 +220,7 @@ fn surface() -> Element {
                     corner_curve: 0.6,
                     semantics: column_semantics(),
                     accessible_name: "Mail",
+                    active_descendant: "surface-spacer",
                     on_window_drag_over: move |over: WindowDragOver| {
                         fired(format!("Column.on_window_drag_over({:?},{})", over.kind, over.window))
                     },
@@ -260,7 +261,7 @@ fn surface() -> Element {
                         space_role: SpaceRole::Xs,
                         alignment: Alignment::CenterStart,
                         radio_group: true,
-                        Spacer { width: 16.0, height: 16.0 }
+                        Spacer { width: 16.0, height: 16.0, descendant_key: "surface-spacer" }
                         Separator {}
                         Divider { vertical: true }
                     }

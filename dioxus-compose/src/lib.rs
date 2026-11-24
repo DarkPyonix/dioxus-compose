@@ -389,6 +389,11 @@ pub mod elements {
             // name it reads, which is a property because a string does not fit a modifier.
             pub const semantics: AttributeDescription = ("semantics", None, false);
             pub const accessible_name: AttributeDescription = ("accessible_name", None, false);
+            // The option a combobox's keys point at while focus stays on the combobox, as
+            // `aria-activedescendant` does on a page: the option names itself with
+            // `descendant_key`, and the combobox names that key with `active_descendant`.
+            pub const descendant_key: AttributeDescription = ("descendant_key", None, false);
+            pub const active_descendant: AttributeDescription = ("active_descendant", None, false);
             // How the node's rounded corners curve, from 0 to 1.
             pub const corner_curve: AttributeDescription = ("corner_curve", None, false);
             // Background image layers over the background colour, up to four, each a

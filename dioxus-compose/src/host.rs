@@ -92,6 +92,7 @@ impl DioxusRuntime {
         self.flush_code_edits();
         self.flush_window_commands();
         crate::html_view::draw_islands(&mut self.renderer);
+        self.renderer.sync_active_descendants();
         self.renderer.check_windows();
         let _ = self.renderer.take_forgotten_windows();
     }
