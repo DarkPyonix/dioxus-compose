@@ -385,6 +385,7 @@ fn surface() -> Element {
                         folds: compose_rust::code::Folds::new([compose_rust::code::Fold::new(0, 0, 1)]),
                         gutter_decorations: compose_rust::code::GutterDecorations::new([compose_rust::code::GutterDecoration::dot(0, 0, 1)]),
                         tab_width: 4_u32,
+                        font_feature_settings: [(b"liga", 0), (b"calt", 0)],
                         line_numbers: false,
                         gutter_min_width: 40.0,
                         gutter_padding: 6.0,
@@ -1005,6 +1006,10 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::FontSize, float(13.0)),
                 (P::LineHeight, float(20.0)),
                 (P::Font, is(Value::Bytes(css_font().as_bytes().to_vec()))),
+                (
+                    P::FontFeatureSettings,
+                    is(Value::Bytes(b"liga\0\0\0\0calt\0\0\0\0".to_vec())),
+                ),
                 (P::Minimap, role(MinimapSide::Left)),
                 (
                     P::ViewZones,
