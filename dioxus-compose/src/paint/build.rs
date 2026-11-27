@@ -30,7 +30,7 @@ use crate::paint::display_list::{
     Corners, DisplayList, FlattenedSpace, ImageFallback, InputField, InputKind, MarkerShape,
     MeasuredAlt, MeasuredMarker, MeasuredTexts, NodeEntry, Outline, PlayDirection, Radius, Rect,
     Rgba, RunMarker, ScrollContainer, Sides, SkippedTransform, TextAlign, TextDecoration, TextRun,
-    Transform2D, Transform3D,
+    Transform2D, Transform3D, TransformFunction3D,
 };
 use crate::paint::motion::{AnimationRequest, Playback};
 use crate::paint::transform::{self, Moved, Perspective};
@@ -58,6 +58,9 @@ struct Placed {
     transform: Option<Transform2D>,
     /// The 3D transform that is drawn on top of this box's place, when its transform is one.
     transform_3d: Option<Transform3D>,
+    /// The functions the box's flat transform left out (see
+    /// [`NodeEntry::transform_functions_3d`]).
+    transform_functions_3d: Option<Vec<TransformFunction3D>>,
     /// The animations a renderer plays on this box.
     animations: Vec<Animation>,
     /// The text colour a running animation starts from, in place of the cascade's.
@@ -375,6 +378,16 @@ impl Painter<'_, '_> {
             (true, Some(style)) => transform::lifted(moved, style, width, height),
             _ => moved,
         };
+        // A transition that later starts from this flat transform toward a 3D one needs
+        // the functions the flat form left out. Only a box whose `transform` a renderer
+        // plays can start one, and only the cascade's transform, not the value a running
+        // animation starts from, is written by the style read here.
+        let transform_functions_3d = match style.as_ref() {
+            Some(style) if keep && rest(AnimatedProperty::Transform).is_none() => {
+                transform::dropped_flat_3d(&moved, style, width, height)
+            }
+            _ => None,
+        };
         let animated_opacity = match rest(AnimatedProperty::Opacity) {
             Some(AnimatedValue::Opacity(value)) => Some(value),
             _ => None,
@@ -555,6 +568,7 @@ impl Painter<'_, '_> {
                 clips: own_clip,
                 transform,
                 transform_3d,
+                transform_functions_3d,
                 animations,
                 color: animated_color,
                 background: animated_background,
@@ -764,6 +778,7 @@ impl Painter<'_, '_> {
             color,
             transform: placed.transform.clone(),
             transform_3d: placed.transform_3d.clone(),
+            transform_functions_3d: placed.transform_functions_3d.clone(),
             animations: placed.animations.clone(),
             scroll: None,
             scroll_parent: placed.scroll_parent,

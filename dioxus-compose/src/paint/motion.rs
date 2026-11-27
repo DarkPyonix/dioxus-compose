@@ -505,12 +505,12 @@ impl Playback for Playing<'_> {
                 }
                 if keyframes[0].offset > 0.0 {
                     let value = self.implicit(request, property);
-                    forms.insert(0, form_of(&value, request));
+                    forms.insert(0, self.implicit_form(&value, request));
                     keyframes.insert(0, Keyframe { offset: 0.0, value });
                 }
                 if keyframes[keyframes.len() - 1].offset < 1.0 {
                     let value = self.implicit(request, property);
-                    forms.push(form_of(&value, request));
+                    forms.push(self.implicit_form(&value, request));
                     keyframes.push(Keyframe { offset: 1.0, value });
                 }
                 // A renderer plays a transform as a list of 2D functions or as a 4x4
@@ -593,6 +593,30 @@ impl Playing<'_> {
             ),
         }
     }
+
+    /// The 3D form of a value [`Playing::implicit`] gave, for an animation with a 3D
+    /// keyframe. A flat transform from the last layout that left flat 3D functions out
+    /// (`rotateX(0deg)`) is taken with them, as [`NodeEntry::transform_functions_3d`]
+    /// keeps them, so that it lines up with a keyframe that writes `rotateX(360deg)`.
+    fn implicit_form(
+        &self,
+        value: &AnimatedValue,
+        request: &AnimationRequest,
+    ) -> Option<Transform3D> {
+        let written = self
+            .prior
+            .and_then(|list| list.get(request.node))
+            .and_then(|entry| entry.transform_functions_3d.as_ref());
+        match (value, written) {
+            (AnimatedValue::Transform(flat), Some(written)) => Some(Transform3D::new(
+                written.clone(),
+                flat.origin,
+                request.origin_depth,
+                request.backface_hidden,
+            )),
+            _ => form_of(value, request),
+        }
+    }
 }
 
 /// The 3D form of a transform keyframe value; `None` for any other property's value.
@@ -611,13 +635,26 @@ fn form_of(value: &AnimatedValue, request: &AnimationRequest) -> Option<Transfor
 /// A box's 2D transform, or no transform, as the 3D transform it is, inside the same
 /// context (`transform-origin` depth, parent perspective, backface) as `like`: the other
 /// end of a transition that passes through a 3D transform.
-fn lifted(flat: Option<&Transform2D>, like: &Transform3D) -> Transform3D {
-    let functions: Vec<TransformFunction3D> = flat.map_or_else(Vec::new, |flat| {
-        flat.functions
-            .iter()
-            .map(TransformFunction3D::from_2d)
-            .collect()
-    });
+///
+/// `written` is the entry's [`NodeEntry::transform_functions_3d`]: the functions as CSS
+/// writes them when the 2D transform left flat 3D ones out. They are taken in place of the
+/// 2D functions, so that `rotateX(0deg) translateX(10px)` to `rotateX(360deg)
+/// translateX(20px)` lines up function by function and is played as the whole turn it
+/// is, not as two equal matrices.
+fn lifted(
+    flat: Option<&Transform2D>,
+    written: Option<&[TransformFunction3D]>,
+    like: &Transform3D,
+) -> Transform3D {
+    let functions: Vec<TransformFunction3D> = match written {
+        Some(written) => written.to_vec(),
+        None => flat.map_or_else(Vec::new, |flat| {
+            flat.functions
+                .iter()
+                .map(TransformFunction3D::from_2d)
+                .collect()
+        }),
+    };
     Transform3D::wrapped(
         functions,
         flat.map_or(like.origin, |flat| flat.origin),
@@ -680,7 +717,11 @@ pub(crate) fn transitions(
                 };
                 let from = match &before.transform_3d {
                     Some(from) => from.clone(),
-                    None => lifted(before.transform.as_ref(), &to),
+                    None => lifted(
+                        before.transform.as_ref(),
+                        before.transform_functions_3d.as_deref(),
+                        &to,
+                    ),
                 };
                 (
                     AnimatedValue::Transform3D(from),

@@ -1419,6 +1419,13 @@ pub struct NodeEntry {
     /// `matrix3d()` that is not flat. A box has this or [`NodeEntry::transform`], never
     /// both.
     pub transform_3d: Option<Transform3D>,
+    /// The box's transform functions as CSS writes them, each in its 3D form, when the box
+    /// has no 3D transform and its flat one left some out: a 3D function whose arguments
+    /// leave it flat (`rotateX(0deg)`) has no 2D form. A transition from here to a 3D
+    /// transform reads them to tell how far the box turns, since `rotateX(0deg)` and
+    /// `rotateX(360deg)` are the same matrix. Kept only for a box that declares a motion of
+    /// `transform`; `None` otherwise, and when nothing was left out.
+    pub transform_functions_3d: Option<Vec<TransformFunction3D>>,
     /// The animations of `@keyframes` this box is running that a renderer plays by itself.
     /// While one is listed, the entry's own value for the property it animates is the value
     /// the animation starts from, and the renderer replaces it as the animation plays.
