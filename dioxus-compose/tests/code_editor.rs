@@ -754,6 +754,53 @@ fn fr38_an_editor_that_names_none_of_its_look_sends_none_of_it() {
     }
 }
 
+/// The OpenType features an editor names go out as `FontFeatureSettings`, in the same
+/// 8-byte records `Text` sends, so `liga` 0 and `calt` 0 reach the Renderer as written.
+#[test]
+fn fr38_code_editor_font_feature_settings_reach_the_wire() {
+    fn unligated() -> Element {
+        rsx! {
+            CodeEditor {
+                text: "a -> b",
+                font_feature_settings: [(b"liga", 0), (b"calt", 0)],
+            }
+        }
+    }
+    let mut host = Host::new(unligated);
+    let batch = records(host.rebuild().unwrap());
+    let editor = node_of(&batch, WidgetKind::CodeEditor);
+    assert_eq!(
+        prop_of(&batch, editor, PropertyKind::FontFeatureSettings),
+        Some(Value::Bytes(b"liga\0\0\0\0calt\0\0\0\0".to_vec()))
+    );
+}
+
+/// An editor that names no features, or an empty list of them, sends no
+/// `FontFeatureSettings`, so the design system's features stand.
+#[test]
+fn fr38_code_editor_empty_font_features_send_nothing() {
+    fn unnamed() -> Element {
+        rsx! {
+            CodeEditor { text: "x" }
+        }
+    }
+    fn emptied() -> Element {
+        rsx! {
+            CodeEditor { text: "x", font_feature_settings: Vec::<([u8; 4], u32)>::new() }
+        }
+    }
+    for app in [unnamed as fn() -> Element, emptied] {
+        let mut host = Host::new(app);
+        let batch = records(host.rebuild().unwrap());
+        let editor = node_of(&batch, WidgetKind::CodeEditor);
+        assert_eq!(
+            prop_of(&batch, editor, PropertyKind::FontFeatureSettings),
+            None,
+            "an editor with no features sent some"
+        );
+    }
+}
+
 /// The row height and the scroll offset arrive as compose-rust's own `CodeMetrics` and
 /// `CodeScroll`, in physical pixels, unrounded.
 #[test]
