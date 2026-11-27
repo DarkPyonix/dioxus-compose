@@ -727,6 +727,7 @@ pub mod elements {
             font_size,
             line_height,
             font,
+            font_feature_settings,
             minimap,
             view_zones,
             word_wrap,

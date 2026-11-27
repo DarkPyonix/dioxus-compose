@@ -2244,6 +2244,7 @@ FR-9이 텍스트 하나에 대해 정한 것을 문서 하나로 넓힙니다. 
 #### 38.1 요소와 컴포넌트
 
 - `CodeEditor` 컴포넌트와 `codeeditor` 요소가 있다. 속성은 `text`(처음 내용, 버전 0), `syntax_spans`, `decorations`, `tab_width`, `handle`, 그리고 다른 위젯과 같은 크기, 패딩, 배경, 테두리 속성이다.
+  - [리더, 2026-11-25] `font_feature_settings`(`FontFeatures`, `Text`와 같은 8바이트 레코드, 속성 192)도 받는다. 렌더러는 그것을 편집기의 글에 적용하고 줄 번호는 디자인 시스템의 것을 쓴다(compose-rust FR-83, #1080). 빈 목록은 속성을 보내지 않는다. 테스트 `fr38_code_editor_font_feature_settings_reach_the_wire`, `fr38_code_editor_empty_font_features_send_nothing`.
 - 이벤트 핸들러는 `on_change`(확정된 변경, `OnValueChange`), `on_edit_rejected`, `on_hover`, `on_save`, `on_decoration_click`이다.
 - `text`가 편집기가 든 글과 같으면 아무 레코드도 나가지 않는다. 비어 있는 `syntax_spans`와 `decorations`는 속성을 보내지 않는다.
 - `use_code_editor()`가 `CodeEditorHandle`을 준다. 핸들로 `EditCode` 명령을 보낸다(서식 맞춤, 완성 수락, 파일 다시 읽기). 핸들이 어느 편집기에도 붙어 있지 않으면 그 편집은 버려진다.

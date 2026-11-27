@@ -5269,6 +5269,11 @@ pub fn CodeEditor(
     /// list. An empty list sends nothing.
     #[props(default)]
     font: compose_rust::fonts::FontRefs,
+    /// The OpenType features the editor's text asks its font for, such as `liga` 0 and
+    /// `calt` 0 to draw `->` as two glyphs. The line numbers keep the design system's.
+    /// Left out, or empty, nothing is sent.
+    #[props(into, default)]
+    font_feature_settings: FontFeatures,
     #[props(default)] weight: Option<f32>,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
@@ -5374,6 +5379,7 @@ pub fn CodeEditor(
             font_size: opt_dp(font_size),
             line_height: opt_dp(line_height),
             font: (!font.is_empty()).then(|| AttributeValue::any_value(font)),
+            font_feature_settings: font_feature_settings.attribute(),
             weight: opt_dp(weight),
             width: opt_dp(width),
             height: opt_dp(height),
