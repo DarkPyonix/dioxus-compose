@@ -126,10 +126,10 @@ pub mod window_attr_markers {
     });
 }
 pub use hooks::{
-    Animated, CodeEditorHandle, WindowHandle, ZoomHandle, animate_color_as_state,
+    Animated, CodeEditorHandle, RichTextHandle, WindowHandle, ZoomHandle, animate_color_as_state,
     animate_float_as_state, animate_offset_as_state, current_window, use_animation_event,
     use_application_reopen, use_code_editor, use_design_system, use_node_size,
-    use_notification_activated, use_notification_permission, use_reduced_motion,
+    use_notification_activated, use_notification_permission, use_reduced_motion, use_rich_text,
     use_system_color_scheme, use_theme, use_window_requested, use_window_safe_area,
     use_window_size, use_zoom,
 };
@@ -287,6 +287,11 @@ pub mod prelude {
         EditRejected, HoverPhase, Position, SaveRequest, SelectionChange, Severity, SyntaxSpan,
         SyntaxSpans, use_code_editor,
     };
+    // A rich text field's handle, and the formatting and document it speaks in.
+    pub use crate::{RichTextHandle, use_rich_text};
+    pub use compose_rust::rich_text::{
+        CharacterRun, Format, ParagraphFormat, RichDocument, TextFormat, Toggle, Tri,
+    };
     // Notifications, from a component or from a worker thread.
     pub use crate::{
         Notification, NotificationActivation, NotificationImportance, NotificationPermission,
@@ -329,6 +334,7 @@ pub mod elements {
     macro_rules! modifier_attributes {
         () => {
             pub const weight: AttributeDescription = ("weight", None, false);
+            pub const weight_unfilled: AttributeDescription = ("weight_unfilled", None, false);
             pub const fill_max_width: AttributeDescription = ("fill_max_width", None, false);
             pub const fill_max_height: AttributeDescription = ("fill_max_height", None, false);
             pub const width: AttributeDescription = ("width", None, false);
@@ -487,7 +493,9 @@ pub mod elements {
             bare,
             font_feature_settings,
             placeholder_color,
-            caret_color
+            caret_color,
+            editor,
+            rich_text
         ]
     );
     // `icon` is the meaning of the glyph on it and never a picture. A button is the
@@ -727,11 +735,14 @@ pub mod elements {
             font_size,
             line_height,
             font,
+            font_feature_settings,
             minimap,
             view_zones,
             word_wrap,
             content_padding_dp,
-            fixed_gutter_columns
+            fixed_gutter_columns,
+            fold_column_width_dp,
+            insert_spaces
         ]
     );
     // A row that wraps: the gaps on a line and between lines, where a line's children sit
@@ -1004,6 +1015,10 @@ pub mod events {
     optional_event!(onscrollchanged, crate::ScrollChange);
     // A code editor's row height and scroll offset, each in physical pixels.
     optional_event!(oncodemetrics, compose_rust::code::CodeMetrics);
+    // A rich text field's formatting at the selection, and its document after the reader
+    // pauses.
+    optional_event!(ontextformat, compose_rust::rich_text::TextFormat);
+    optional_event!(onrichtextchanged, compose_rust::rich_text::RichDocument);
     optional_event!(oncodescrolled, compose_rust::code::CodeScroll);
     // Where a code editor draws its caret, in the window's dp.
     optional_event!(oncaretrect, compose_rust::code::CaretRect);

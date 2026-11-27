@@ -183,6 +183,7 @@ const SENT_WHEN_SET: &[PropertyKind] = &[
     PropertyKind::ContainerColor,
     PropertyKind::CheckColor,
     PropertyKind::OutlineColor,
+    PropertyKind::RichText,
     PropertyKind::Indeterminate,
     PropertyKind::ThumbElevation,
     PropertyKind::TrackBorder,
@@ -640,6 +641,26 @@ impl ComposeRenderer {
                 self.batch
                     .insert_snippet(node_id, *base_version, *range, snippet);
             }
+            EditorRequest::FormatText { format, .. } => {
+                let (op, value, paint) = format.to_command();
+                self.write(Mutation::FormatText {
+                    node_id,
+                    op,
+                    value,
+                    paint,
+                });
+            }
+            EditorRequest::SetRichText { document, .. } => {
+                let characters = document.encode_characters();
+                let paragraphs = document.encode_paragraphs();
+                self.write(Mutation::SetRichText {
+                    node_id,
+                    text: &document.text,
+                    characters: &characters,
+                    paragraphs: &paragraphs,
+                    selection: None,
+                });
+            }
         }
     }
 
@@ -745,7 +766,7 @@ impl ComposeRenderer {
         };
 
         let slot_of = |name: &str| match name {
-            "weight" => Some(WEIGHT),
+            "weight" | "weight_unfilled" => Some(WEIGHT),
             "fill_max_width" => Some(FILL_MAX_WIDTH),
             "fill_max_height" => Some(FILL_MAX_HEIGHT),
             "width" => Some(WIDTH),
@@ -835,6 +856,7 @@ impl ComposeRenderer {
                 )))
             }
             "weight" => Some(Some((WEIGHT, Modifier::Weight(float(value)?)))),
+            "weight_unfilled" => Some(Some((WEIGHT, Modifier::WeightUnfilled(float(value)?)))),
             "width" => Some(Some((WIDTH, Modifier::Width(float(value)?)))),
             "height" => Some(Some((HEIGHT, Modifier::Height(float(value)?)))),
             "padding" => Some(Some((PADDING, Modifier::Padding(float(value)?)))),
@@ -2456,6 +2478,8 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "caretrect" | "oncaretrect" => Some(PropertyKind::OnCaretRect),
         "keypreview" | "onkeypreview" => Some(PropertyKind::OnKeyPreview),
         "codepointer" | "oncodepointer" => Some(PropertyKind::OnCodePointer),
+        "textformat" | "ontextformat" => Some(PropertyKind::OnTextFormat),
+        "richtextchanged" | "onrichtextchanged" => Some(PropertyKind::OnRichTextChanged),
         "editgroupresult" | "oneditgroupresult" => Some(PropertyKind::OnEditGroupResult),
         "motionfinished" | "onmotionfinished" => Some(PropertyKind::OnMotionFinished),
         "nativeviewfocus" | "onnativeviewfocus" => Some(PropertyKind::OnNativeViewFocus),
