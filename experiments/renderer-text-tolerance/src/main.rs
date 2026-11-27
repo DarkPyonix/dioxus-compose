@@ -50,7 +50,7 @@ use blitz_html::HtmlDocument;
 use blitz_traits::shell::{ColorScheme, Viewport};
 use dioxus_compose::html::{
     BaseDocument, ClickTargets, DisplayList, NodeEntry, NodeId, PlanBridge, Rect, RendererMeasurer,
-    TextRun, layout_document, plan_from,
+    TextMeasurer, TextRun, layout_document, plan_from,
 };
 use dioxus_compose::protocol::{HostEvent, ProtocolError};
 use dioxus_compose::schema::Window;
