@@ -2,6 +2,21 @@
 
 ## Unreleased
 
+### HTML: motion through a 3D transform is played
+
+A `transform` transition or `@keyframes` animation with a 3D keyframe goes to the renderer
+as an `AnimatedProperty::Transform3D` animation of matrix keyframes, each keyframe's
+transform multiplied out without its origin. The box carries its transform as a
+`Transform3D` modifier while the motion is declared, flat or untransformed ends included,
+and the origin and `backface-visibility` are that modifier's. A segment whose function
+lists line up and that turns half a turn or more is cut into pieces that each turn less,
+with keyframes interpolated function by function as CSS does, and its timing is cut with
+it: a `cubic-bezier()` at the same points, `linear` as it is, and `steps()` as one
+`steps(1)` keyframe per step. No warning is written for these motions any more, and
+`DisplayList::skipped_transforms` stays empty. In the display list such a keyframe is
+`AnimatedValue::Transform3D`, and `Transform3D` keeps its function list
+(`TransformFunction3D`) beside its matrix.
+
 ### HTML: inline `<svg>` is drawn
 
 An `<svg>` written in the page is drawn in its box. Its markup is registered with the
@@ -96,9 +111,8 @@ transform keeps its 2D transform, and the perspective goes no further down than 
 parent's own children. A scroll inside the parent does not move the perspective origin
 against its children.
 
-A transition or `@keyframes` animation that passes through a 3D transform is not played,
-because the renderer animates 2D transform functions only: the box takes the transform at
-once, and the motion is listed in `DisplayList::skipped_transforms` and named on stderr.
+A transition or `@keyframes` animation that passes through a 3D transform is played by the
+renderer as 4x4 matrices: see "HTML: motion through a 3D transform is played" above.
 
 `Matrix3D`, `PlaneMap`, `Transform3D` and `FlattenedSpace` are new in
 `dioxus_compose::html`. `NodeEntry::drawn_map` gives a box's transform, 2D or 3D, as a map

@@ -1033,7 +1033,7 @@ impl PlanBridge {
         batch.write(Mutation::ControlAnimation {
             node_id,
             animation_id: running.id,
-            property: animate::wire_property(running.property),
+            property: animate::wire_property_of(&running.animation),
             slot: running.slot,
             op,
             at_time_nanos: 0,
@@ -2555,6 +2555,7 @@ fn transform_origin(animation: &CssAnimation) -> Option<(f32, f32)> {
         .iter()
         .find_map(|keyframe| match &keyframe.value {
             AnimatedValue::Transform(transform) => Some(transform.origin),
+            AnimatedValue::Transform3D(transform) => Some(transform.origin),
             _ => None,
         })
 }

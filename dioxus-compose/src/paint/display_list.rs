@@ -1056,6 +1056,13 @@ impl From<Matrix2D> for PlaneMap {
 /// box's own top-left corner, in CSS pixels, and lies in the box's plane: a depth given to
 /// `transform-origin` is folded into the matrix. Like a 2D transform, it moves how the box
 /// and everything inside it is drawn, and nothing about layout.
+///
+/// The function list is kept beside the matrix for the reason [`Transform2D`] keeps its
+/// own: an animation needs to know how far something turned, which a matrix cannot say.
+/// `matrix` is `outer * product * inner`, where `product` is the functions multiplied out
+/// in list order. `inner` and `outer` are what the box's context adds around its own
+/// functions: a depth in `transform-origin` (moved to zero before, back after) and the
+/// parent's `perspective` (in front).
 #[derive(Clone, Debug, PartialEq)]
 pub struct Transform3D {
     pub matrix: Matrix3D,
@@ -1063,9 +1070,122 @@ pub struct Transform3D {
     /// `backface-visibility: hidden`: the box is not drawn, and takes no pointer, while
     /// its back is turned to the viewer.
     pub backface_hidden: bool,
+    /// The transform's functions, 2D ones as their 3D forms, in list order.
+    pub functions: Vec<TransformFunction3D>,
+    pub outer: Matrix3D,
+    pub inner: Matrix3D,
+}
+
+/// One function of a transform list in its 3D form, resolved to numbers: lengths in CSS
+/// pixels and angles in radians. A 2D function is the 3D function it is a case of, so
+/// `rotate(a)` is a turn about the z axis and `translate(x, y)` a move with no depth.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum TransformFunction3D {
+    Translate(f32, f32, f32),
+    /// `rotate3d(x, y, z, angle)`: the axis as written, which need not be a unit vector,
+    /// and the angle, not reduced to a turn.
+    Rotate(f32, f32, f32, f32),
+    Scale(f32, f32, f32),
+    /// `skew(x, y)`.
+    Skew(f32, f32),
+    /// `perspective(depth)`; a depth that is not finite is `perspective(none)`.
+    Perspective(f32),
+    Matrix(Matrix3D),
+}
+
+impl TransformFunction3D {
+    /// The matrix of the function.
+    pub fn matrix(&self) -> Matrix3D {
+        match *self {
+            TransformFunction3D::Translate(x, y, z) => Matrix3D::translation(x, y, z),
+            TransformFunction3D::Rotate(x, y, z, radians) => Matrix3D::rotation(x, y, z, radians),
+            TransformFunction3D::Scale(x, y, z) => Matrix3D::scaling(x, y, z),
+            TransformFunction3D::Skew(x, y) => Matrix3D::from_2d(&Matrix2D::skew(x, y)),
+            TransformFunction3D::Perspective(depth) => Matrix3D::perspective(depth),
+            TransformFunction3D::Matrix(matrix) => matrix,
+        }
+    }
+
+    /// The 3D form of a 2D function.
+    pub fn from_2d(function: &TransformFunction) -> Self {
+        match *function {
+            TransformFunction::Translate(x, y) => TransformFunction3D::Translate(x, y, 0.0),
+            TransformFunction::Rotate(radians) => {
+                TransformFunction3D::Rotate(0.0, 0.0, 1.0, radians)
+            }
+            TransformFunction::Scale(x, y) => TransformFunction3D::Scale(x, y, 1.0),
+            TransformFunction::Skew(x, y) => TransformFunction3D::Skew(x, y),
+            TransformFunction::Matrix(matrix) => {
+                TransformFunction3D::Matrix(Matrix3D::from_2d(&matrix))
+            }
+        }
+    }
+}
+
+/// The functions multiplied out in list order.
+pub(crate) fn product_3d(functions: &[TransformFunction3D]) -> Matrix3D {
+    functions
+        .iter()
+        .fold(Matrix3D::IDENTITY, |total, function| {
+            total.times(&function.matrix())
+        })
 }
 
 impl Transform3D {
+    /// The transform of `functions` about `origin`, inside `outer` and `inner` (see
+    /// [`Transform3D`]).
+    pub fn wrapped(
+        functions: Vec<TransformFunction3D>,
+        origin: (f32, f32),
+        outer: Matrix3D,
+        inner: Matrix3D,
+        backface_hidden: bool,
+    ) -> Self {
+        let matrix = outer.times(&product_3d(&functions)).times(&inner);
+        Transform3D {
+            matrix,
+            origin,
+            backface_hidden,
+            functions,
+            outer,
+            inner,
+        }
+    }
+
+    /// The transform of `functions` about `origin`, whose `transform-origin` lies `depth`
+    /// CSS pixels in front of the box's plane. No parent perspective is in it.
+    pub fn new(
+        functions: Vec<TransformFunction3D>,
+        origin: (f32, f32),
+        depth: f32,
+        backface_hidden: bool,
+    ) -> Self {
+        let (outer, inner) = if depth != 0.0 {
+            (
+                Matrix3D::translation(0.0, 0.0, depth),
+                Matrix3D::translation(0.0, 0.0, -depth),
+            )
+        } else {
+            (Matrix3D::IDENTITY, Matrix3D::IDENTITY)
+        };
+        Transform3D::wrapped(functions, origin, outer, inner, backface_hidden)
+    }
+
+    /// A 2D transform as a 3D one, for a box whose motion passes through a 3D transform
+    /// and so carries even its flat transforms as 4x4 matrices.
+    pub fn from_2d(transform: &Transform2D, depth: f32, backface_hidden: bool) -> Self {
+        Transform3D::new(
+            transform
+                .functions
+                .iter()
+                .map(TransformFunction3D::from_2d)
+                .collect(),
+            transform.origin,
+            depth,
+            backface_hidden,
+        )
+    }
+
     /// The matrix about the origin, in the coordinates of the box's own top-left corner.
     pub fn about_origin(&self) -> Matrix3D {
         Matrix3D::translation(self.origin.0, self.origin.1, 0.0)
@@ -1115,6 +1235,11 @@ pub enum AnimatedProperty {
 pub enum AnimatedValue {
     Opacity(f32),
     Transform(Transform2D),
+    /// A keyframe of a motion of `transform` that passes through a 3D transform. Every
+    /// keyframe of such a motion is one of these, its 2D ones included, and the box it
+    /// plays on carries its transform as [`NodeEntry::transform_3d`] while the motion is
+    /// declared, because a renderer plays it as a 4x4 matrix on that.
+    Transform3D(Transform3D),
     Colour(Rgba),
 }
 
@@ -1224,9 +1349,10 @@ pub struct TransitionStart {
     pub animation: Animation,
 }
 
-/// A motion of `transform` that is not played because it passes through a 3D transform: a
-/// renderer animates lists of 2D functions only. The box is drawn with the transform it
-/// rests at.
+/// A motion of `transform` that is not played. Nothing is listed as one now: a motion
+/// that passes through a 3D transform is played as 4x4 matrices
+/// ([`AnimatedValue::Transform3D`]). The type stays so that code reading
+/// [`DisplayList::skipped_transforms`] keeps compiling.
 #[derive(Clone, Debug, PartialEq)]
 pub struct SkippedTransform {
     pub node: NodeId,
@@ -1344,8 +1470,8 @@ pub struct DisplayList {
     pub entries: Vec<NodeEntry>,
     /// The transitions this layout started, for a renderer to play.
     pub transitions: Vec<TransitionStart>,
-    /// The motions of `transform` this layout does not play because they pass through a
-    /// 3D transform.
+    /// The motions of `transform` this layout does not play. Always empty: a motion
+    /// through a 3D transform is played as matrices.
     pub skipped_transforms: Vec<SkippedTransform>,
     /// The elements whose `transform-style: preserve-3d` is drawn flat.
     pub flattened_spaces: Vec<FlattenedSpace>,
