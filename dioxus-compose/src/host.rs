@@ -414,6 +414,22 @@ pub(crate) fn deliver_event(
             };
             Event::new(Rc::new(value), false).into_any()
         }
+        // The formatting at a rich text field's selection, and its document after the reader
+        // pauses. Each answers that field, so neither bubbles to an ancestor.
+        EventPayload::TextFormatAtSelection(_) => {
+            let Some(value) = compose_rust::rich_text::TextFormat::from_payload(&event.payload)
+            else {
+                return Err(ProtocolError::InvalidValueKind(0));
+            };
+            Event::new(Rc::new(value), false).into_any()
+        }
+        EventPayload::RichTextChanged { .. } => {
+            let Some(value) = compose_rust::rich_text::RichDocument::from_payload(&event.payload)
+            else {
+                return Err(ProtocolError::InvalidValueKind(0));
+            };
+            Event::new(Rc::new(value), false).into_any()
+        }
         // What became of one grouped edit asked of the editor's handle. It answers that
         // editor's own request, so it does not bubble to an ancestor.
         EventPayload::CodeEditGroupResult { .. } => {
