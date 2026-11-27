@@ -2315,6 +2315,88 @@ FR-9이 텍스트 하나에 대해 정한 것을 문서 하나로 넓힙니다. 
 6. **시간.** 소유자의 Mac에서 rsx 리터럴 하나를 바꿔 저장한 때부터 새 그림의 첫 프레임까지 1초 이하이다. 다섯 번 잰 중앙값과 기계, 날짜를 이 항목 옆에 적는다. 작업 공간의 다른 크레이트에 있는 rsx에서도 같다.
 7. 배포 빌드의 실행 파일에 템플릿을 받는 코드와 개발 서버 연결 코드가 없다(fr54_release_build_has_no_hot_reload_client).
 
+### FR-92 OS 웹뷰를 담는 `webview` 요소 (`Draft`)
+
+추적: thisisthepy/compose-multiplatform-core-extended #332(설계 문서 `extended/window/docs/webview-host.md`, 초안 PR #333). 웹뷰를 만들고 움직이고 없애는 것은 포크의 `extended/window/webview`(`WebViewHost`, `WebView`)이고, 창 안에 놓고 자르고 덮개 구멍을 내는 것은 포크의 `NativeViews`(compose-rust FR-81의 `NativeView` 노드와 같은 자리)이다. 위젯, 속성, 이벤트, 명령의 와이어는 compose-rust의 `WebView` 위젯 항목이 정한다(번호는 compose-rust와 맞춘다, 확정 전). 이 항목은 그 위에 얹는 rsx 표면만 다룬다.
+
+소유자 결정(2026-11-27, 리더 경유): "웹뷰 금지"는 UI를 웹뷰로 만들지 않는다는 뜻이고, 창이 웹뷰를 담을 수 없다는 뜻이 아니다. 이 요소는 창 안의 한 위젯으로 들어가는 내장 콘텐츠를 위한 것이다(예: Ember 편집기 안의 VS Code Web, 문서 미리보기, 로그인 페이지). 애플리케이션 UI를 HTML로 짜서 이 요소에 넣는 것은 이 항목의 용도가 아니다. 브라우저 기능(탭, 기록 UI, 다운로드 UI, 확장)도 넣지 않는다. 필요하면 호출자가 만든다.
+
+#### 92.1 요소와 켜는 방법
+
+- `webview` 요소와 `WebView` 컴포넌트가 있다. 크레이트 기능 `webview`를 켰을 때만 있고, 기본은 꺼져 있다. 기능을 끈 빌드에서 `webview`를 쓰면 컴파일이 실패한다. 이 크레이트는 기능을 켜도 WKWebView, WebView2, WebKitGTK, android.webkit.WebView에 링크하지 않는다. 웹뷰를 링크하거나 여는 것은 렌더러이고, 렌더러는 첫 `webview`가 생길 때 연다(92.6). 그래서 INTENT C1과 NFR-2("코어 크레이트는 웹뷰에 링크하지 않는다")를 지킨다. C1의 "opt-in 별도 크레이트"를 기능 플래그로 읽는 것이 맞는지는 소유자가 정한다(92.8).
+- 놓는 자리는 다른 위젯과 같다. Compose 위젯으로 쓴 화면에서는 `Column`, `Row`, `ComposeBox`의 자식이 되고 `width`, `height`, `weight`, `padding` 같은 공통 크기 속성을 받는다. HTML과 CSS로 쓴 화면(FR-34)에서는 FR-34.3의 대체 요소가 된다. 고유 크기는 없고, CSS가 크기를 주지 않으면 `iframe`과 같은 300×150 CSS 픽셀이다.
+- 웹뷰는 장면 위에 놓인 진짜 OS 뷰이다. 화면 밖에서 웹 콘텐츠를 그려 Compose 장면에 넣지 않는다. 조상의 클립으로 잘리고, 그 위에 뜬 메뉴, 팝오버, 대화상자, 시트는 구멍으로 뚫려 위에 보이고 포인터를 받는다(포크 `NativeViews`). 스크롤과 함께 움직일 때 한 프레임 늦지 않는다(compose-rust `NativeView`와 같은 레이아웃 단계).
+- `webview` 요소의 자식은 대체 콘텐츠이다. 웹뷰가 준비되기 전, 이 OS에서 웹뷰를 쓸 수 없을 때(WebView2 런타임 없음, `libwebkit2gtk-4.1` 없음), 웹 콘텐츠 프로세스가 죽었을 때 자식이 그 자리에 그려진다. 자식이 없으면 빈 상자이다.
+
+#### 92.2 속성
+
+- 내용: `src`(URL) 또는 `html`(문자열)과 `base_url`. 둘 다 주면 `src`가 이긴다. 값을 바꾸면 그 내용을 다시 읽는다. 같은 값을 다시 주면 아무 레코드도 나가지 않는다.
+- `schemes`: 애플리케이션이 답하는 사용자 정의 스킴 목록(`app`, `ember` 등). 각 스킴의 요청은 `onschemerequest` 핸들러(92.3)가 답한다. 스킴 목록은 웹뷰를 만들 때 한 번 정해진다(WKWebView와 WebView2가 생성 전에만 받는다). 만든 뒤에 목록을 바꾸면 웹뷰를 새로 만든다.
+- `document_start_scripts`: 페이지 스크립트보다 먼저 주입하는 스크립트 목록. 만든 뒤에 바꾸면 다음 탐색부터 적용된다.
+- `profile_dir`: 쿠키와 저장소를 둘 디렉터리. 없으면 사라지는 프로필이다. 여러 `webview`가 같은 디렉터리를 나눠 쓸 수 있다.
+- `transparent`(`bool`, 기본 `false`): 페이지 배경을 투명하게 해서 아래 장면이 보이게 한다.
+- `devtools`(`bool`, 기본 `false`): 검사기를 켠다.
+- `user_agent_suffix`: 사용자 에이전트 문자열 뒤에 붙일 글.
+- `allowed_origins`: 탐색 기본 정책(92.7)이 허용할 추가 출처.
+- `hidden`(`bool`): 숨긴다. 숨긴 웹뷰는 페이지와 상태를 그대로 가진다(선택되지 않은 탭). 요소를 트리에서 빼면 웹뷰는 떼어지고 없어진다.
+- 비어 있는 목록 속성은 속성을 보내지 않는다.
+
+#### 92.3 이벤트
+
+- `onnavigate`(`Event<WebNavigation>`: `url`, `is_main_frame`, `user_initiated`): 주 프레임 탐색마다 불린다. 핸들러가 동기로 돌려준 `NavigationDecision`(`Allow` / `Deny`)이 그 호출의 반환으로 렌더러에 간다(PR-1, FR-12와 같은 방식). 핸들러가 없으면 기본 정책(92.7)이 정한다.
+- `onnewwindow`(`Event<String>`, 새 창의 URL): 핸들러가 동기로 돌려준 결정을 쓴다. 기본은 `Deny`이다. 시스템 브라우저로 여는 것은 호출자가 한다.
+- `onload`(`Event<WebLoad>`: `url`, `success`): 읽기가 끝났을 때.
+- `ontitle`(`Event<String>`): 페이지 제목이 바뀌었을 때.
+- `onmessage`(`Event<String>`, JSON 문자열): 페이지가 `window.darkpyonix.postMessage(json)`으로 보낸 메시지. 이 크레이트는 JSON을 풀지 않고 문자열 그대로 준다.
+- `onfocusleave`(`Event<FocusDirection>`): 페이지의 마지막(Shift면 첫) 요소에서 Tab을 눌렀을 때. 이벤트가 끝나면 Compose 포커스가 그 방향의 다음 대상으로 간다. 핸들러가 없어도 포커스는 옮겨진다.
+- `onprocessgone`(`Event<String>`, 이유): 웹 콘텐츠 프로세스가 죽었을 때. 대체 콘텐츠가 그려지고, 핸들의 `reload()`가 웹뷰를 새로 만든다.
+- `onwebviewfailed`(`Event<String>`, 이유): 웹뷰를 만들지 못했을 때(쓸 수 없는 OS 포함). 대체 콘텐츠가 그려진다.
+- `onschemerequest`(`Event<SchemeRequest>`: `url`, `method`, `headers`): `schemes`의 요청. 핸들러는 요청에 달린 응답자로 상태, 헤더, 본문을 돌려준다. 그 자리에서 답해도 되고 작업 스레드에서 나중에 답해도 된다(WKURLSchemeHandler와 WebView2가 모두 미뤄 답하기를 받는다). 응답 본문은 배치 버퍼의 바이트로 가며, 경계에 새 진입점을 만들지 않는다(PR-2). 답하지 않고 응답자가 버려지면 404로 답한다.
+
+#### 92.4 핸들과 명령
+
+- `use_webview()`가 `WebViewHandle`을 주고, `webview`의 `handle` 속성으로 붙인다. `CodeEditorHandle`(FR-38)과 같은 방식이다. 핸들이 어느 웹뷰에도 붙어 있지 않거나 웹뷰가 아직 준비되지 않았으면 명령은 버려지고 `eval_js`는 오류로 끝난다.
+- `eval_js(script) -> impl Future<Output = Result<String, WebViewError>>`: 페이지의 주 프레임에서 실행하고 값의 JSON을 돌려준다. 결과는 이벤트로 돌아오고 Host가 그 이벤트로 퓨처를 끝낸다. 경계에 비동기 큐를 두지 않는다(PR-1).
+- `post_message(json)`: 페이지의 `window.darkpyonix.addEventListener('message', ...)`로 간다.
+- `reload()`, `stop()`, `go_back()`, `go_forward()`, `set_zoom(f64)`, `focus()`.
+- 명령 하나는 레코드 하나로 나간다.
+
+#### 92.5 포커스, 키, IME
+
+- 페이지 안의 글 입력과 IME 조합은 OS 웹뷰의 것이다. 조합 글이 Rust를 거치지 않고(D5), 웹뷰가 포커스를 가진 동안 장면의 글 입력 세션은 끝나 있다. "Compose 플랫폼 글 입력을 우회하지 않는다"는 제약은 애플리케이션 UI의 글에 대한 것이고, 웹 페이지 안의 글은 처음부터 Compose의 것이 아니다.
+- `webview`는 Compose 포커스 순서에 든다. Tab으로 들어오면 렌더러가 웹뷰에 포커스를 넘기고, 웹뷰를 클릭하면 Compose 포커스가 이 노드로 온다. `onfocus`, `onblur`는 다른 포커스 가능한 요소와 같게 불린다.
+- 페이지가 포커스를 가진 동안 애플리케이션 단축키(Cmd/Ctrl+W, Q, 앱의 키맵)는 페이지보다 먼저 애플리케이션에 온다. 이 크레이트에서는 조상의 `onkeydown`에 보통의 키 이벤트로 오고, 소비 여부(FR-12)가 페이지에 넘길지를 정한다. 키 이벤트에는 웹뷰에서 왔다는 표시가 있다.
+
+#### 92.6 수명과 비용
+
+- 첫 `webview`가 생길 때까지 렌더러는 웹뷰 라이브러리를 열지 않는다. `webview`를 쓰지 않는 앱이 내보내는 배치는 이 변경 전과 바이트 단위로 같다.
+- `webview` 하나에 웹뷰 하나이다. 요소가 트리에서 빠지면 떼고 없앤다. `hidden`은 없애지 않는다.
+
+#### 92.7 보안 기본값
+
+- 탐색 기본 정책: `onnavigate`가 없으면 `src`의 출처, `schemes`, `allowed_origins`만 허용한다. `onnewwindow`가 없으면 새 창은 거부한다.
+- `file://`은 허용하지 않는다. `allowed_origins`에 디렉터리를 명시한 경우만 예외이다.
+- `window.darkpyonix` 다리는 앱의 출처(`schemes`와 `src`의 출처)에만 설치된다. 다른 프레임이나 출처의 메시지는 버려지고 `onmessage`에 오지 않는다.
+- `devtools`는 기본으로 꺼져 있다.
+
+#### 92.8 소유자가 정할 것
+
+1. INTENT C1과 NFR-2의 "opt-in 별도 크레이트"를 이 크레이트의 기능 플래그 `webview`로 충족해도 되는가, 아니면 별도 크레이트여야 하는가. 별도 크레이트면 저장소 루트에 새 폴더가 필요하다(AGENTS.md 루트 목록, 소유자 승인).
+2. AGENTS.md의 하드 제약 "No webview: no WKWebView, WebView2, or WebKitGTK"와 INTENT C1의 문구를 위 결정("UI를 웹뷰로 만들지 않는다, 창은 웹뷰를 담을 수 있다")에 맞게 고칠 것인가. 이 항목은 그 문구를 바꾸지 않았다.
+3. 배포 빌드에서 `devtools = true`를 따를 것인가, 무시할 것인가.
+4. iOS를 첫 차례에 넣을 것인가(포크 설계 §6.5). 넣으면 이 표면은 그대로 쓴다.
+
+#### 92.9 수용 기준
+
+1. 기능 `webview`를 켠 빌드에서 FR-15의 기존 검사(`fr15_every_widget_in_the_schema_has_an_rsx_element`, `fr15_every_property_in_the_schema_is_reachable_from_rsx`, `fr15_every_event_handler_written_in_rsx_is_called`)가 `WebView`를 포함해 통과한다. 끈 빌드에서는 `webview` 요소가 없다(`fr92_webview_needs_the_feature`).
+2. `webview`를 쓰지 않는 앱의 배치가 이전과 바이트 단위로 같다(`fr92_apps_without_a_webview_unchanged`).
+3. `src`, `html`, `schemes`를 바꾸면 각각 다시 읽기, 다시 읽기, 새로 만들기가 나가고, 같은 값은 레코드를 내지 않는다(`fr92_content_changes_reach_the_wire`).
+4. `onnavigate`와 `onnewwindow`의 동기 결정이 그 디스패치의 반환으로 돌아오고, 핸들러가 없을 때 기본 정책이 다른 출처와 새 창을 거부한다(`fr92_navigation_decision_is_returned`).
+5. `onload`, `ontitle`, `onmessage`, `onfocusleave`, `onprocessgone`, `onwebviewfailed`, `onschemerequest`가 각각 해당 핸들러의 값으로 도착하고, 미뤄 답한 스킴 응답이 다음 배치로 나간다(`fr92_webview_events_reach_their_handlers`, `fr92_scheme_response_may_come_later`).
+6. 핸들의 명령은 하나씩 레코드 하나로 나가고, 붙어 있지 않은 핸들의 명령은 나가지 않으며 `eval_js`는 오류로 끝난다(`fr92_handle_commands_reach_the_wire`).
+7. HTML 화면에서 `webview`가 CSS 크기 그대로 놓이고, 크기가 없으면 300×150이다(`fr92_webview_is_a_replaced_element_in_html`).
+8. 수동, native-image 빌드: macOS, Windows, Linux(X11), Android에서 창 안에 VS Code Web(Ember)이 뜨고, 스크롤 컨테이너에 잘리며, 위에 뜬 메뉴가 구멍으로 보이고, 페이지 안에서 한글 조합이 되고, Tab으로 들어가고 나오며, 페이지에 포커스가 있을 때 Cmd/Ctrl+W가 앱에 온다. 이 확인은 포크의 백엔드와 compose-rust의 `WebView` 위젯이 배포된 뒤에 한다. 그 전에는 확인하지 않았다.
+
 ## 4. 경계 프로토콜
 
 ### PR-1 호출 모델: 동기·동일 스레드 직접 호출 (`Done`)
