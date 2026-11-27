@@ -56,7 +56,6 @@ use crate::paint::bridge::ClickTargets;
 use crate::paint::build::build_display_list;
 use crate::paint::display_list::{
     AnimatedProperty, DisplayList, DisplayListDiff, FlattenedSpace, InputKind, Rect, Sides,
-    SkippedTransform,
 };
 use crate::paint::motion::{
     MotionState, Playing, SETTLE_MARGIN, Scan, rewrite_reduced_motion, transitions,
@@ -710,7 +709,6 @@ impl HtmlDom {
                 state: &mut self.motion,
                 prior: self.current.as_ref(),
                 now,
-                skipped: Vec::new(),
             };
             let mut list = build_display_list(
                 &self.doc,
@@ -719,13 +717,10 @@ impl HtmlDom {
                 Some(&mut playing),
                 &scroll_offsets,
             );
-            list.skipped_transforms.append(&mut playing.skipped);
             // After the last use of `playing`, which holds the motion state mutably.
             apply_appearance(&mut list, |node| self.appearance_is_none(node));
             if animating {
-                let mut skipped = Vec::new();
-                list.transitions = transitions(&scan, self.current.as_ref(), &list, &mut skipped);
-                list.skipped_transforms.append(&mut skipped);
+                list.transitions = transitions(&scan, self.current.as_ref(), &list);
             }
             self.motion.end_frame();
             list
@@ -787,27 +782,10 @@ impl HtmlDom {
         *self.resize.collect_buffer() = pending;
     }
 
-    /// Says on stderr, once for each, which element's motion through a 3D transform is not
-    /// played, and which element's `transform-style: preserve-3d` is drawn flat. The
-    /// display list carries them all in
-    /// [`skipped_transforms`](DisplayList::skipped_transforms) and
+    /// Says on stderr, once for each, which element's `transform-style: preserve-3d` is
+    /// drawn flat. The display list carries them all in
     /// [`flattened_spaces`](DisplayList::flattened_spaces).
     fn report_skipped(&mut self, list: &DisplayList) {
-        for SkippedTransform {
-            node,
-            tag,
-            transform,
-        } in &list.skipped_transforms
-        {
-            if self.motion.warned.insert((*node, transform.clone())) {
-                eprintln!(
-                    "dioxus-compose: <{tag}> (node {node}) animates a 3D transform \
-                     (`{transform}`). The renderer animates 2D transform functions only, so \
-                     this motion is not played and the element is drawn with the transform \
-                     it rests at."
-                );
-            }
-        }
         for FlattenedSpace { node, tag } in &list.flattened_spaces {
             if self
                 .motion

@@ -20,9 +20,9 @@ use std::rc::Rc;
 use dioxus_compose::html::prelude::*;
 use dioxus_compose::html::{
     AnimatedProperty, AnimatedValue, Animation, DisplayList, Easing, FillMode, HtmlConfig, HtmlDom,
-    Iterations, LiteralColours, ModifierSlot, NodeEntry, NodeId, PlanChange, PlanKey, PlanModifier,
-    PlayDirection, Rgba, StepPosition, TextMeasureRequest, TextMeasurer, TextMetrics,
-    TransformFunction, TransitionStart, WidthConstraint, diff,
+    Iterations, LiteralColours, Matrix3D, ModifierSlot, NodeEntry, NodeId, PlanChange, PlanKey,
+    PlanModifier, PlayDirection, Rgba, StepPosition, TextMeasureRequest, TextMeasurer, TextMetrics,
+    TransformFunction, TransformFunction3D, TransitionStart, WidthConstraint, diff,
 };
 use dioxus_core::ScopeId;
 
@@ -580,26 +580,60 @@ fn through_3d() -> Element {
     }
 }
 
-/// A renderer animates lists of 2D transform functions, so a motion of `transform` that
-/// passes through a 3D transform is not described for it, and the display list names the
-/// motion instead (the layout writes a warning to stderr for each, once).
+/// A motion of `transform` that passes through a 3D transform is described for the
+/// renderer as 3D transforms, and nothing is named as skipped. What goes on the wire (the
+/// matrices, the cut of a long turn) is `fr34_2_motion_send.rs`.
 ///
+/// - `#tumbler` runs `tumble`, from `rotateX(0deg)` to `rotateX(360deg)`. Its one
+///   animation of `transform` has only 3D keyframes, the first a turn of nothing about x,
+///   and the box rests on a 3D transform, the identity.
 /// - `#flip` declares `transition: transform 1s linear` and the `on` class turns it over
-///   with `rotateY(180deg)`. No transition starts: the box has the 3D transform at once.
-/// - `#tumbler` runs `tumble`, whose last keyframe is `rotateX(360deg)`. The entry lists
-///   no animation of `transform`.
+///   with `rotateY(180deg)`: one transition between two 3D transforms, from the identity
+///   (no transform) to a turn of 180 degrees about y.
+/// - Taking the class off again at 3s goes back to no transform. The box still carries a
+///   3D transform, the identity, because it still declares the transition and the renderer
+///   plays the way back on that.
 #[test]
-fn fr34_2_a_motion_through_a_3d_transform_is_not_played_and_is_named() {
+fn fr34_2_a_motion_through_a_3d_transform_is_described_as_3d_transforms() {
     let (mut dom, _) = open(through_3d, THROUGH_3D_CSS, false);
     let first = dom.display_list().unwrap().clone();
     let tumbler = entry(&dom, &first, "tumbler");
-    assert!(tumbler.animations.is_empty(), "{:#?}", tumbler.animations);
+    assert_eq!(tumbler.animations.len(), 1, "{:#?}", tumbler.animations);
+    let tumble = &tumbler.animations[0];
+    assert_eq!(tumble.property, AnimatedProperty::Transform);
+    assert_eq!(tumble.name.as_deref(), Some("tumble"));
+    let turns: Vec<(f32, f32, f32, f32)> = tumble
+        .keyframes
+        .iter()
+        .map(|keyframe| match &keyframe.value {
+            AnimatedValue::Transform3D(transform) => match transform.functions[..] {
+                [TransformFunction3D::Rotate(x, y, z, radians)] => (x, y, z, radians),
+                ref other => panic!("one rotate3d(), not {other:?}"),
+            },
+            other => panic!("a 3D keyframe, not {other:?}"),
+        })
+        .collect();
+    assert_eq!(turns.len(), 2, "{turns:?}");
+    assert_eq!((turns[0].0, turns[0].1, turns[0].2), (1.0, 0.0, 0.0));
+    assert!(close(turns[0].3, 0.0), "{turns:?}");
+    assert_eq!((turns[1].0, turns[1].1, turns[1].2), (1.0, 0.0, 0.0));
+    assert!(close(turns[1].3, std::f32::consts::TAU), "{turns:?}");
+    let resting = tumbler
+        .transform_3d
+        .as_ref()
+        .expect("#tumbler rests on a 3D transform");
+    assert!(tumbler.transform.is_none());
     assert!(
-        first
-            .skipped_transforms
+        resting
+            .matrix
+            .0
             .iter()
-            .any(|skipped| skipped.node == tumbler.node
-                && skipped.transform.contains("@keyframes tumble")),
+            .zip(Matrix3D::IDENTITY.0)
+            .all(|(a, b)| close(*a, b)),
+        "{resting:?}"
+    );
+    assert!(
+        first.skipped_transforms.is_empty(),
         "{:#?}",
         first.skipped_transforms
     );
@@ -609,22 +643,45 @@ fn fr34_2_a_motion_through_a_3d_transform_is_not_played_and_is_named() {
     let flip = entry(&dom, &list, "flip");
     assert!(
         flip.transform.is_none() && flip.transform_3d.is_some(),
-        "#flip is turned over at once: {flip:#?}"
+        "{flip:#?}"
     );
+    let over = transition(&dom, &list, "flip", AnimatedProperty::Transform);
+    match (over.start(), over.end()) {
+        (AnimatedValue::Transform3D(from), AnimatedValue::Transform3D(to)) => {
+            assert!(from.functions.is_empty(), "{from:?}");
+            assert!(
+                matches!(
+                    to.functions[..],
+                    [TransformFunction3D::Rotate(0.0, 1.0, 0.0, radians)]
+                        if close(radians, std::f32::consts::PI)
+                ),
+                "{to:?}"
+            );
+            assert_eq!(to.origin, (50.0, 25.0));
+        }
+        other => panic!("two 3D ends, not {other:?}"),
+    }
     assert!(
-        !list.transitions.iter().any(|start| start.node == flip.node),
+        list.skipped_transforms.is_empty(),
         "{:#?}",
-        list.transitions
+        list.skipped_transforms
     );
+
+    set("flip", false);
+    let back = relayout(&mut dom, 3.0);
+    let flip = entry(&dom, &back, "flip");
+    let flat = flip
+        .transform_3d
+        .as_ref()
+        .expect("#flip still declares the transition, so it keeps a 3D transform");
+    assert!(flip.transform.is_none());
+    assert!(flat.functions.is_empty(), "{flat:?}");
+    let home = transition(&dom, &back, "flip", AnimatedProperty::Transform);
     assert!(
-        list.skipped_transforms
-            .iter()
-            .any(|skipped| skipped.node == flip.node
-                && skipped.tag == "div"
-                && skipped.transform == "transition: transform"),
-        "{:#?}",
-        list.skipped_transforms
+        matches!(home.end(), AnimatedValue::Transform3D(ref to) if to.functions.is_empty()),
+        "{home:#?}"
     );
+    assert!(back.skipped_transforms.is_empty());
 }
 
 const COLOR_CSS: &str = r#"
