@@ -143,6 +143,7 @@ const TWO_SELECTIONS: [u8; 32] = [
 /// Every element the prelude exports, once, with its main properties and handlers.
 fn surface() -> Element {
     let (text, spans) = spans();
+    let rich = use_rich_text();
     rsx! {
         window {
             title: "Inbox",
@@ -327,7 +328,17 @@ fn surface() -> Element {
                             event.code(),
                             event.text()
                         )),
+                        rich_text: rich,
+                        on_text_format: move |format: TextFormat| fired(format!(
+                            "TextField.on_text_format({:?})",
+                            format.bold
+                        )),
+                        on_rich_text_change: move |document: RichDocument| fired(format!(
+                            "TextField.on_rich_text_change({})",
+                            document.text
+                        )),
                     }
+                    Spacer { weight: 2.0, weight_fill: false }
                     ScrollColumn {
                         fill_max_width: true,
                         snap: Snap::ItemStart,
@@ -390,6 +401,8 @@ fn surface() -> Element {
                         gutter_min_width: 40.0,
                         gutter_padding: 6.0,
                         text_inset: 8.0,
+                        fold_column_width: 14.0,
+                        insert_spaces: false,
                         colors: editor_colors(),
                         on_code_metrics: move |metrics: CodeMetrics| fired(format!("CodeEditor.on_code_metrics({})", metrics.line_height_px)),
                         on_code_scrolled: move |scroll: CodeScroll| fired(format!("CodeEditor.on_code_scrolled({})", scroll.offset_px)),
@@ -929,6 +942,9 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                     P::FontFeatureSettings,
                     is(Value::Bytes(b"zero\x01\0\0\0".to_vec())),
                 ),
+                (P::RichText, flag(true)),
+                (P::OnTextFormat, Handler),
+                (P::OnRichTextChanged, Handler),
                 (P::OnMotionFinished, Handler),
                 (P::Enabled, flag(true)),
                 (P::Multiline, flag(true)),
@@ -989,6 +1005,8 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::GutterMinWidthDp, float(40.0)),
                 (P::GutterPaddingDp, float(6.0)),
                 (P::TextInsetDp, float(8.0)),
+                (P::FoldColumnWidthDp, float(14.0)),
+                (P::InsertSpaces, flag(false)),
                 (
                     P::CodeEditorColors,
                     is(Value::Bytes(editor_colors().to_bytes().to_vec())),
@@ -1814,6 +1832,25 @@ fn fr15_every_event_handler_written_in_rsx_is_called() {
             P::OnNativeViewFocus,
             EventPayload::NativeViewFocus { focused: true },
             "NativeView.on_focus_change(true)",
+        ),
+        (
+            W::TextField,
+            P::OnTextFormat,
+            EventPayload::TextFormatAtSelection(TextFormat {
+                bold: Tri::All,
+                ..TextFormat::default()
+            }),
+            "TextField.on_text_format(All)",
+        ),
+        (
+            W::TextField,
+            P::OnRichTextChanged,
+            EventPayload::RichTextChanged {
+                text: "note",
+                characters: &[],
+                paragraphs: &[],
+            },
+            "TextField.on_rich_text_change(note)",
         ),
     ];
     let mut failures = Vec::new();
