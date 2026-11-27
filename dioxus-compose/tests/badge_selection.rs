@@ -367,6 +367,11 @@ fn fr33_no_event_tag_exists_for_selecting_or_copying() {
         if event.name == "ClipboardText" {
             continue;
         }
+        // Which styles the selection of a rich text field has: bold, a colour, a list. It
+        // names no text, so nothing the user selected crosses with it.
+        if event.name == "TextFormatAtSelection" {
+            continue;
+        }
         assert!(
             !name.contains("select") && !name.contains("copy") && !name.contains("clipboard"),
             "{} would carry a selection across the boundary",

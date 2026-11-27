@@ -183,6 +183,7 @@ const SENT_WHEN_SET: &[PropertyKind] = &[
     PropertyKind::ContainerColor,
     PropertyKind::CheckColor,
     PropertyKind::OutlineColor,
+    PropertyKind::RichText,
     PropertyKind::Indeterminate,
     PropertyKind::ThumbElevation,
     PropertyKind::TrackBorder,

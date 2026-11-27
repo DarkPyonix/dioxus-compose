@@ -190,6 +190,9 @@ fn fr15_no_property_lets_the_host_choose_how_a_picker_is_operated() {
     let named: Vec<_> = dioxus_compose::schema::PROPERTY_SCHEMA
         .iter()
         .map(|property| property.name.to_ascii_lowercase())
+        // The handler that hears a rich text field's formatting at the selection: text
+        // styles, nothing about a picker.
+        .filter(|name| name != "ontextformat")
         .filter(|name| {
             [
                 "wheel", "dial", "calendar", "grid", "flyout", "mode", "style", "format",
