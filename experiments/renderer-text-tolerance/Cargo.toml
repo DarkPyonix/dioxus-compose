@@ -1,0 +1,32 @@
+# Deliberately outside the workspace, like experiments/blitz-layout-probe: it is a probe
+# run once on a machine with the native renderer, not something the workspace tests or
+# publishes. Its own `[workspace]` keeps it out of the member list, out of the default test
+# run and out of the shared build directory; it builds into its own `target/` here.
+#
+# Cargo.lock started as a copy of the workspace's, so the crates it resolves are the ones
+# the workspace's tests were run with.
+[workspace]
+
+[package]
+name = "renderer-text-tolerance"
+edition = "2024"
+publish = false
+
+[dependencies]
+# The default features, so `native-renderer` resolves or downloads compose-rust's
+# prebuilt renderer for this machine. `patched-blitz` because the workspace's checks lay
+# the fixtures out with it on, and the patch below supplies it.
+dioxus-compose = { path = "../../dioxus-compose", features = ["patched-blitz"] }
+# The versions dioxus-compose pins, named here because tests/support (included by path)
+# parses the fixtures with them.
+blitz-dom = "=0.2.4"
+blitz-html = "=0.2.0"
+blitz-traits = "=0.2.0"
+# Reads experiments/blitz-layout-probe/captured/text.json, the line breaks VS Code drew.
+serde_json = "1"
+
+# The same patched blitz-dom as the workspace (see the root Cargo.toml). Run
+# scripts/apply-patches.sh first: until it has built that directory, cargo stops with
+# "failed to load source for dependency `blitz-dom`".
+[patch.crates-io]
+blitz-dom = { path = "../../.scratch/patched/blitz-dom-0.2.4" }
