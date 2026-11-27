@@ -254,16 +254,8 @@ fn wire_style(style: &TextStyle, white_space: TextWhiteSpace) -> WireStyle {
             TextLineHeight::Normal => style.font_size * 1.2,
         }),
         wrap: white_space.wrap,
-        word_break: Some(match style.word_break {
-            WordBreak::Normal => WireWordBreak::Normal,
-            WordBreak::BreakAll => WireWordBreak::BreakAll,
-            WordBreak::KeepAll => WireWordBreak::KeepAll,
-        }),
-        overflow_wrap: Some(match style.overflow_wrap {
-            OverflowWrap::Normal => WireOverflowWrap::Normal,
-            OverflowWrap::Anywhere => WireOverflowWrap::Anywhere,
-            OverflowWrap::BreakWord => WireOverflowWrap::BreakWord,
-        }),
+        word_break: Some(wire_word_break(style.word_break)),
+        overflow_wrap: Some(wire_overflow_wrap(style.overflow_wrap)),
         // The page's sizes are CSS pixels, which the system's font scale does not enlarge.
         // The page's zoom travels beside the style: `settle` sets it on the requests before
         // the questions are added, the cache key holds it, and a change of zoom clears the
@@ -388,5 +380,23 @@ impl TextMeasurer for RendererMeasurer {
             learned = true;
         }
         learned
+    }
+}
+
+/// The wire value of a run's `word-break`.
+pub(crate) fn wire_word_break(word_break: WordBreak) -> WireWordBreak {
+    match word_break {
+        WordBreak::Normal => WireWordBreak::Normal,
+        WordBreak::BreakAll => WireWordBreak::BreakAll,
+        WordBreak::KeepAll => WireWordBreak::KeepAll,
+    }
+}
+
+/// The wire value of a run's `overflow-wrap`.
+pub(crate) fn wire_overflow_wrap(overflow_wrap: OverflowWrap) -> WireOverflowWrap {
+    match overflow_wrap {
+        OverflowWrap::Normal => WireOverflowWrap::Normal,
+        OverflowWrap::Anywhere => WireOverflowWrap::Anywhere,
+        OverflowWrap::BreakWord => WireOverflowWrap::BreakWord,
     }
 }

@@ -2194,3 +2194,40 @@ fn fr34_dialog_descendants_reach_the_accessibility_tree() {
         "{first:#?}"
     );
 }
+
+fn word_breaking() -> Element {
+    rsx! {
+        div { "plain words" }
+        div { style: "word-break: break-all; overflow-wrap: anywhere", "broken words" }
+    }
+}
+
+/// Every drawn run says where its lines may break inside a word, the CSS defaults included.
+/// The renderer keeps a word too long for its line whole only when it is told
+/// `overflow-wrap: normal`, so a run with no `word-break` or `overflow-wrap` of its own sends
+/// `Normal` for both rather than leaving them unset.
+#[test]
+fn fr34_text_sends_word_break_and_overflow_wrap_explicitly() {
+    let mut host = Host::html(word_breaking, config);
+    let first = tree(records(host.rebuild().unwrap()));
+
+    let plain = text_node(&first, "plain words");
+    assert_eq!(
+        prop_of(&first, plain, PropertyKind::WordBreak),
+        Value::Int(dioxus_compose::WordBreak::Normal as i64)
+    );
+    assert_eq!(
+        prop_of(&first, plain, PropertyKind::OverflowWrap),
+        Value::Int(dioxus_compose::OverflowWrap::Normal as i64)
+    );
+
+    let broken = text_node(&first, "broken words");
+    assert_eq!(
+        prop_of(&first, broken, PropertyKind::WordBreak),
+        Value::Int(dioxus_compose::WordBreak::BreakAll as i64)
+    );
+    assert_eq!(
+        prop_of(&first, broken, PropertyKind::OverflowWrap),
+        Value::Int(dioxus_compose::OverflowWrap::Anywhere as i64)
+    );
+}

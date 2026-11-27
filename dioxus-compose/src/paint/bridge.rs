@@ -37,7 +37,9 @@ use compose_rust::spans::{TextSpan, TextSpans};
 
 use crate::html::NodeId;
 use crate::layout::measure::{SpanRun, TextLineHeight, TextStyle};
-use crate::layout::renderer_measure::{SpanBase, font_refs, wire_spans};
+use crate::layout::renderer_measure::{
+    SpanBase, font_refs, wire_overflow_wrap, wire_spans, wire_word_break,
+};
 use crate::paint::animate;
 use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation as CssAnimation, GradientStop, Rect, Rgba,
@@ -1583,6 +1585,22 @@ impl PlanBridge {
                     Prop::Int(text.text.matches('\n').count() as i64 + 1)
                 };
                 self.set_prop(batch, key, PropertyKind::MaxLines, max_lines);
+                // Where a line may break inside a word, sent on every run, `normal` included:
+                // a word too long for its line stays whole and overflows only when the
+                // renderer is told `overflow-wrap: normal`, and a property never sent reads
+                // as unset rather than as `normal`.
+                self.set_prop(
+                    batch,
+                    key,
+                    PropertyKind::WordBreak,
+                    Prop::Int(wire_word_break(text.style.word_break) as i64),
+                );
+                self.set_prop(
+                    batch,
+                    key,
+                    PropertyKind::OverflowWrap,
+                    Prop::Int(wire_overflow_wrap(text.style.overflow_wrap) as i64),
+                );
                 // `text-overflow: ellipsis` ends a line cut at the node's width in an
                 // ellipsis. Every other run is drawn whole and its box clips it, if the
                 // box clips at all.

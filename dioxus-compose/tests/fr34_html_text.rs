@@ -782,6 +782,59 @@ fn fr34_justified_lines_fill_the_width() {
     assert!(plan_text.soft_wrap);
 }
 
+/// The width of the plan's text node for a run in a 50px box. A word too long for its line
+/// keeps the line and overflows: "abcdefghij klm" is "abcdefghij" (100px) and "klm", so the
+/// run is 100px wide, but the node is given the 50px the lines were broken at. Given 100px,
+/// the renderer would put "klm" on the long word's line. Text that fits keeps its own width,
+/// and so does one unconstrained line.
+#[test]
+fn fr34_wrapped_text_is_drawn_at_its_break_width() {
+    let (doc, list) = laid_out(
+        r#"<div id="long">abcdefghij klm</div>
+<div id="fits">abc de</div>
+<div id="one" style="width: auto; white-space: nowrap">abcdefghij klm</div>"#,
+        "#long, #fits { width: 50px; }",
+    );
+    let plan = plan_from(&list);
+    let width_of = |id: &str| {
+        let node = element_by_id(&doc, id).unwrap();
+        let text = plan
+            .find(PlanKey::Text { node, index: 0 })
+            .unwrap_or_else(|| panic!("#{id} has a text node"));
+        let PlanKind::Text(plan_text) = &text.kind else {
+            panic!("a text run is a Text: {text:#?}");
+        };
+        let width = text
+            .modifiers
+            .iter()
+            .find_map(|modifier| match modifier {
+                PlanModifier::Width(width) => Some(*width),
+                _ => None,
+            })
+            .unwrap_or_else(|| panic!("#{id} has a width: {text:#?}"));
+        (width, plan_text.soft_wrap)
+    };
+
+    let long = &entry(&list, &doc, "long").texts[0];
+    assert_close(
+        long.rect.width,
+        100.0,
+        "the run is as wide as the long word",
+    );
+    assert_eq!(long.wrap_width, Some(50.0));
+    let (width, soft_wrap) = width_of("long");
+    assert!(soft_wrap);
+    assert_close(width, 50.0, "the long word's node");
+
+    let (width, soft_wrap) = width_of("fits");
+    assert!(soft_wrap);
+    assert_close(width, 30.0, "text that fits keeps its widest line");
+
+    let (width, soft_wrap) = width_of("one");
+    assert!(!soft_wrap);
+    assert_close(width, 140.0, "one unconstrained line keeps its width");
+}
+
 // ------------------------------------------------------------------------------------------
 // inline boxes inside block container
 
