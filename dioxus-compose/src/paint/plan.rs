@@ -1552,6 +1552,18 @@ impl<'a> Builder<'a> {
                 ..span.clone()
             })
             .collect();
+        let soft_wrap =
+            run.wrap_width.is_some() && (run.line_count > 1 || run.align == TextAlign::Justify);
+        // Wrapped text is given the width its lines were broken at, not the width of its
+        // widest line. A word too long for that width (`overflow-wrap: normal`) makes the
+        // widest line wider, and the renderer, given that wider width, would fit the
+        // following words onto the long word's line where CSS starts a new one. At the
+        // break width the renderer keeps the long word whole and lets it overflow the node,
+        // and the lines after it break where the measurer broke them.
+        let width = match run.wrap_width {
+            Some(wrap) if soft_wrap && wrap < run.rect.width => wrap,
+            _ => run.rect.width,
+        };
         self.push(
             content,
             Slot {
@@ -1563,8 +1575,7 @@ impl<'a> Builder<'a> {
                     color,
                     decoration: run.decoration,
                     align: run.align,
-                    soft_wrap: run.wrap_width.is_some()
-                        && (run.line_count > 1 || run.align == TextAlign::Justify),
+                    soft_wrap,
                     ellipsis: run.ellipsis,
                     marker: run.marker,
                     spans,
@@ -1576,10 +1587,7 @@ impl<'a> Builder<'a> {
                     },
                     // Text cut with an ellipsis is as wide as the cut: the renderer ends a
                     // line that does not fit the width it is given in an ellipsis.
-                    PlanModifier::Width(
-                        run.ellipsis
-                            .map_or(run.rect.width, |cut| cut.min(run.rect.width)),
-                    ),
+                    PlanModifier::Width(run.ellipsis.map_or(width, |cut| cut.min(width))),
                 ],
                 children: Vec::new(),
                 parent: None,
