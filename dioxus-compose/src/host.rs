@@ -92,6 +92,7 @@ impl DioxusRuntime {
         self.flush_code_edits();
         self.flush_window_commands();
         crate::html_view::draw_islands(&mut self.renderer);
+        self.renderer.sync_active_descendants();
         self.renderer.check_windows();
         let _ = self.renderer.take_forgotten_windows();
     }
@@ -237,6 +238,7 @@ pub(crate) fn deliver_event(
     }
     let mut key_event = None;
     let mut pointer_event = None;
+    let mut back_request = None;
     // A press on a link run arrives as a click on the handler the run was given, and
     // reaches the `Text`'s link listener with the value the application named it by.
     let link = renderer.link_value(event.handler_id);
@@ -506,6 +508,15 @@ pub(crate) fn deliver_event(
             true,
         )
         .into_any(),
+        // A request to go back, offered to this node's handler. The Renderer offers it to
+        // each container out that has a handler in turn, and stops at the one whose handler
+        // consumed it, so the request does not bubble here and whether it was consumed is
+        // the call's result, as a previewed key's is.
+        EventPayload::BackRequested { source } => {
+            let value = crate::BackRequest::new(source);
+            back_request = Some(value.clone());
+            Event::new(Rc::new(value), false).into_any()
+        }
         // The size a node's size motion settled at, in dp. It is that node's own
         // motion, so it does not bubble to an ancestor that has a motion handler too.
         EventPayload::MotionFinished {
@@ -635,7 +646,8 @@ pub(crate) fn deliver_event(
     dom.runtime().handle_event(name, event_data, element);
     Ok(i64::from(
         key_event.is_some_and(|event| event.consumed())
-            || pointer_event.is_some_and(|event| event.consumed()),
+            || pointer_event.is_some_and(|event| event.consumed())
+            || back_request.is_some_and(|request| request.consumed()),
     ))
 }
 

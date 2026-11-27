@@ -139,13 +139,13 @@ pub use html_view::HtmlView;
 pub use html_widget::use_widget_box;
 pub use list_detail::ListDetail;
 pub use widgets::{
-    AbsoluteBox, BackgroundLayer, Badge, Button, Canvas, Card, Checkbox, Chip, CodeEditor, Column,
-    ColumnSpec, ColumnWidth, ComposeBox as Box, DatePicker, Dialog, Divider, Dropdown,
-    FileDropTarget, FloatingAction, FlowRow, FontFeatures, Icon, Image, LazyColumn, LazyGrid,
-    LazyRow, Menu, NativeView, Navigation, NavigationItem, Popover, ProgressIndicator, RadioButton,
-    Row, Scaffold, ScrollChange, ScrollColumn, ScrollRow, SelectionContainer, Semantics, Separator,
-    ShadowLayer, Sheet, SizeIn, Slider, Spacer, SplitPane, Surface, Switch, Table, Tabs, Text,
-    TextField, TimePicker, Tooltip, TopAppBar,
+    AbsoluteBox, BackRequest, Backdrop, BackgroundLayer, Badge, Button, Canvas, Card, Checkbox,
+    Chip, CodeEditor, Column, ColumnSpec, ColumnWidth, ComposeBox as Box, DatePicker, Dialog,
+    Divider, Dropdown, FileDropTarget, FloatingAction, FlowRow, FontFeatures, Icon, Image,
+    LazyColumn, LazyGrid, LazyRow, Menu, NativeView, Navigation, NavigationItem, Popover,
+    ProgressIndicator, RadioButton, Row, Scaffold, ScrollChange, ScrollColumn, ScrollRow,
+    SelectionContainer, Semantics, Separator, ShadowLayer, Sheet, SizeIn, Slider, Spacer,
+    SplitPane, Surface, Switch, Table, Tabs, Text, TextField, TimePicker, Tooltip, TopAppBar,
 };
 
 #[cfg(target_family = "wasm")]
@@ -281,6 +281,9 @@ pub mod prelude {
     // compose-rust 0.0.11: a place for a platform view, the bounds a node's size is kept
     // within, a centred sheet, and a code editor's room above and below its text.
     pub use crate::{ContentPadding, NativeHandle, NativeView, SheetPresentation, SizeIn};
+    // compose-rust 9171cd5c: a request to go back and where it came from, the heights a
+    // bottom sheet rests at, and a backdrop with values of the application's own.
+    pub use crate::{BackRequest, BackSource, Backdrop, SheetDetents};
     // A code editor, its handle, and the ranges and events it speaks in.
     pub use crate::{
         CodeChange, CodeEditor, CodeEditorHandle, CodeHover, CodeRange, Decoration, Decorations,
@@ -354,6 +357,9 @@ pub mod elements {
             pub const motion: AttributeDescription = ("motion", None, false);
             // What this node's surface is made of, where it has one.
             pub const material: AttributeDescription = ("material", None, false);
+            // What the application drew behind the node, blurred, desaturated and tinted
+            // with values of its own, as one `Modifier::Backdrop`.
+            pub const backdrop: AttributeDescription = ("backdrop", None, false);
             // Willingness to have files dropped, said by having somewhere to report them.
             // A node without a handler is never told files are over it, which is what
             // keeps a screen from lighting up every container it has.
@@ -395,6 +401,11 @@ pub mod elements {
             // name it reads, which is a property because a string does not fit a modifier.
             pub const semantics: AttributeDescription = ("semantics", None, false);
             pub const accessible_name: AttributeDescription = ("accessible_name", None, false);
+            // The option a combobox's keys point at while focus stays on the combobox, as
+            // `aria-activedescendant` does on a page: the option names itself with
+            // `descendant_key`, and the combobox names that key with `active_descendant`.
+            pub const descendant_key: AttributeDescription = ("descendant_key", None, false);
+            pub const active_descendant: AttributeDescription = ("active_descendant", None, false);
             // How the node's rounded corners curve, from 0 to 1.
             pub const corner_curve: AttributeDescription = ("corner_curve", None, false);
             // Background image layers over the background colour, up to four, each a
@@ -512,7 +523,9 @@ pub mod elements {
             color,
             button_kind,
             max_lines,
-            overflow
+            overflow,
+            shortcut_label,
+            menu_entry
         ]
     );
     // Spacer has no attributes of its own: its size comes from the Modifier attributes
@@ -601,7 +614,8 @@ pub mod elements {
     // `open` seeds the Renderer's own open state rather than driving it frame by frame: the
     // Renderer owns the enter and exit so neither crosses the boundary.
     element!(dialog, "Dialog", [open, scrim]);
-    element!(menu, "Menu", [open, scrim]);
+    // `menu_entry` makes a menu a submenu of the menu it is in, and a button an item.
+    element!(menu, "Menu", [open, scrim, menu_entry]);
     // The selection is the Renderer's too. `selected_index` seeds it and moves it when the
     // change came from outside the Renderer.
     element!(tabs, "Tabs", [selected_index, color]);
@@ -653,7 +667,9 @@ pub mod elements {
             max_height_fraction,
             presentation,
             max_width,
-            sheet_handle
+            sheet_handle,
+            sheet_detents,
+            sheet_drag_to_dismiss
         ]
     );
     // The screen's frame. It carries nothing of its own: what it is made of arrives as
@@ -1038,6 +1054,9 @@ pub mod events {
     optional_event!(onmotionfinished, crate::MotionFinished);
     // A native view took the keyboard focus (true) or lost it.
     optional_event!(onnativeviewfocus, bool);
+    // A request to go back that no open overlay and no focused control took, heard by a
+    // container or a window. Consuming it keeps it from the containers further out.
+    optional_event!(onbackrequested, crate::BackRequest);
     event!(onrangerequest, crate::RangeRequest);
     // A dismissal carries no value, so it reuses the empty event payload a click uses.
     event!(ondismiss, ());
