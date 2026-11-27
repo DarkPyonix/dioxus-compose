@@ -158,11 +158,14 @@ pub mod slot {
     pub const OVERLAY: u16 = BORDER + 17;
     pub const STICKY: u16 = BORDER + 18;
     pub const UNBOUNDED_WIDTH: u16 = BORDER + 19;
+    // Last, where compose-rust's own writer puts it too. Taking the next free position
+    // moves no slot a node already holds a value in.
+    pub const BACKDROP: u16 = BORDER + 20;
 }
 
 /// How many Modifier slots a node has. The slot numbers are assigned in `set_modifier`,
 /// and this is one past the last of them.
-const MODIFIER_SLOTS: usize = slot::UNBOUNDED_WIDTH as usize + 1;
+const MODIFIER_SLOTS: usize = slot::BACKDROP as usize + 1;
 
 /// How many background image layers one node can carry, one `BackgroundBrush` modifier
 /// each. The first is drawn at the bottom.
@@ -227,6 +230,10 @@ const SENT_WHEN_SET: &[PropertyKind] = &[
     PropertyKind::ContentPaddingDp,
     PropertyKind::FixedGutterColumns,
     PropertyKind::NativeVisible,
+    PropertyKind::SheetDetents,
+    PropertyKind::SheetDragToDismiss,
+    PropertyKind::ShortcutLabel,
+    PropertyKind::MenuEntry,
 ];
 
 /// How many shadows one node can carry. Each takes a chain position of its own, because a
@@ -887,6 +894,7 @@ impl ComposeRenderer {
             "overlay" => Some(OVERLAY),
             "sticky" => Some(STICKY),
             "unbounded_width" => Some(UNBOUNDED_WIDTH),
+            "backdrop" => Some(BACKDROP),
             _ => None,
         };
         let slot = slot_of(name)?;
@@ -1230,6 +1238,20 @@ impl ComposeRenderer {
                         }
                         _ => None,
                     }
+                }
+            }
+            // A blur, a saturation and a tint, carried as the application's `Backdrop` or as
+            // the whole modifier, so the three arrive as one record.
+            "backdrop" => {
+                let AttributeValue::Any(any) = value else {
+                    return None;
+                };
+                if let Some(backdrop) = any.as_any().downcast_ref::<crate::widgets::Backdrop>() {
+                    return Some(Some((BACKDROP, backdrop.to_modifier())));
+                }
+                match as_modifier(value)? {
+                    m @ Modifier::Backdrop { .. } => Some(Some((BACKDROP, m))),
+                    _ => None,
                 }
             }
             "press_feedback" => {
@@ -2581,6 +2603,7 @@ fn event_property(name: &str) -> Option<PropertyKind> {
         "editgroupresult" | "oneditgroupresult" => Some(PropertyKind::OnEditGroupResult),
         "motionfinished" | "onmotionfinished" => Some(PropertyKind::OnMotionFinished),
         "nativeviewfocus" | "onnativeviewfocus" => Some(PropertyKind::OnNativeViewFocus),
+        "backrequested" | "onbackrequested" => Some(PropertyKind::OnBackRequested),
         "rangerequest" | "onrangerequest" => Some(PropertyKind::OnRangeRequested),
         "dismiss" | "ondismiss" => Some(PropertyKind::OnDismiss),
         "filesentered" | "onfilesentered" => Some(PropertyKind::OnFilesEntered),

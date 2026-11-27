@@ -109,6 +109,83 @@ pub struct ScrollChange {
     pub viewport_height_px: f64,
 }
 
+/// A request to go back that nothing the Renderer owns took, as `on_back_requested` hears
+/// it: Android's back gesture or button, Escape when no control and no open overlay used
+/// it, a mouse's back button, or a swipe in from the leading edge on iOS.
+///
+/// The innermost container with a handler hears it first. A handler that acted on it calls
+/// [`consume`](Self::consume), and the request stops there. One that leaves it alone lets
+/// the Renderer offer it to the next container out that has a handler, then to the window,
+/// and after the last of them to the platform, which on Android does what it does with a
+/// back nobody claimed.
+#[derive(Clone, Debug)]
+pub struct BackRequest(compose_rust::BackRequested);
+
+impl BackRequest {
+    pub(crate) fn new(source: compose_rust::BackSource) -> Self {
+        Self(compose_rust::BackRequested::new(source))
+    }
+
+    /// Which gesture, button or key asked. Most screens treat them alike; the source is
+    /// there for the one that wants Escape to mean something else.
+    pub fn source(&self) -> compose_rust::BackSource {
+        self.0.source()
+    }
+
+    /// Says the request was acted on, so no outer handler and no platform default sees it.
+    pub fn consume(&self) {
+        self.0.consume();
+    }
+
+    /// Whether a handler consumed it.
+    pub fn consumed(&self) -> bool {
+        self.0.consumed()
+    }
+}
+
+/// What the application drew behind a node, seen through it: blurred by `blur_dp`, its
+/// saturation multiplied by `saturation` (1 leaves it as it is) and `tint` laid over it,
+/// all inside the node's outline.
+///
+/// The values are the application's and look the same on every design system, where a
+/// `material` leaves the look to the design system; on a node with both, this is what is
+/// drawn. Only what this application drew is blurred, never the desktop behind the window.
+/// Where the Renderer cannot blur, or the reader asked for reduced transparency, the node is
+/// painted with `tint` at full opacity, so pick a tint that reads on its own. A `blur_dp` or
+/// a `saturation` that is negative or not a number is reported by the Renderer as a
+/// protocol error, and the node is painted the same way.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Backdrop {
+    pub blur_dp: f32,
+    pub saturation: f32,
+    pub tint: Paint,
+}
+
+impl Backdrop {
+    pub const fn new(blur_dp: f32, saturation: f32, tint: Paint) -> Self {
+        Self {
+            blur_dp,
+            saturation,
+            tint,
+        }
+    }
+
+    /// The modifier this travels as.
+    pub const fn to_modifier(self) -> compose_rust::Modifier {
+        compose_rust::Modifier::Backdrop {
+            blur_dp: self.blur_dp,
+            saturation: self.saturation,
+            tint: self.tint,
+        }
+    }
+
+    /// The value of the `backdrop` attribute. An unchanged backdrop compares equal, so it
+    /// costs no record after the first frame.
+    pub(crate) fn attribute(self) -> AttributeValue {
+        AttributeValue::any_value(self)
+    }
+}
+
 /// The OpenType features a text asks its font for, in order: tabular figures, a ligature
 /// left apart, a stylistic set. A feature never changes which font the text is set in; it
 /// picks one of the forms the font already has, so text with a type role takes them too.
@@ -600,6 +677,10 @@ pub fn AbsoluteBox(
     #[props(default)]
     corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -769,6 +850,7 @@ pub fn AbsoluteBox(
             transform_3d,
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -808,6 +890,12 @@ pub fn Column(
     /// attaches nothing to the motion.
     #[props(default)]
     on_motion_finished: Option<EventHandler<MotionFinished>>,
+    /// Called with a request to go back that no open overlay and no focused control
+    /// took. The innermost container with a handler hears it first; calling `consume`
+    /// on it stops it there, and leaving it lets the next container out hear it. Left
+    /// out, nothing is announced and the request passes this container by.
+    #[props(default)]
+    on_back_requested: Option<EventHandler<BackRequest>>,
     #[props(default)] weight: Option<f32>,
     /// With `false`, `weight` takes up to its share of the room left without stretching a
     /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
@@ -822,6 +910,10 @@ pub fn Column(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -926,6 +1018,7 @@ pub fn Column(
     };
     rsx! {
         column {
+            onbackrequested: optional_listener(on_back_requested, BackRequest::clone),
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
             match_parent_size: match_parent_size.then_some(true),
             window_drag,
@@ -957,6 +1050,7 @@ pub fn Column(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -1005,6 +1099,12 @@ pub fn Row(
     /// attaches nothing to the motion.
     #[props(default)]
     on_motion_finished: Option<EventHandler<MotionFinished>>,
+    /// Called with a request to go back that no open overlay and no focused control
+    /// took. The innermost container with a handler hears it first; calling `consume`
+    /// on it stops it there, and leaving it lets the next container out hear it. Left
+    /// out, nothing is announced and the request passes this container by.
+    #[props(default)]
+    on_back_requested: Option<EventHandler<BackRequest>>,
     #[props(default)] weight: Option<f32>,
     /// With `false`, `weight` takes up to its share of the room left without stretching a
     /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
@@ -1019,6 +1119,10 @@ pub fn Row(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -1123,6 +1227,7 @@ pub fn Row(
     };
     rsx! {
         row {
+            onbackrequested: optional_listener(on_back_requested, BackRequest::clone),
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
             match_parent_size: match_parent_size.then_some(true),
             window_drag,
@@ -1154,6 +1259,7 @@ pub fn Row(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -1203,6 +1309,10 @@ pub fn FlowRow(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -1248,6 +1358,7 @@ pub fn FlowRow(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -1294,6 +1405,12 @@ pub fn ComposeBox(
     /// attaches nothing to the motion.
     #[props(default)]
     on_motion_finished: Option<EventHandler<MotionFinished>>,
+    /// Called with a request to go back that no open overlay and no focused control
+    /// took. The innermost container with a handler hears it first; calling `consume`
+    /// on it stops it there, and leaving it lets the next container out hear it. Left
+    /// out, nothing is announced and the request passes this container by.
+    #[props(default)]
+    on_back_requested: Option<EventHandler<BackRequest>>,
     #[props(default)] weight: Option<f32>,
     /// With `false`, `weight` takes up to its share of the room left without stretching a
     /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
@@ -1308,6 +1425,10 @@ pub fn ComposeBox(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -1401,6 +1522,7 @@ pub fn ComposeBox(
     };
     rsx! {
         composebox {
+            onbackrequested: optional_listener(on_back_requested, BackRequest::clone),
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
             match_parent_size: match_parent_size.then_some(true),
             window_drag,
@@ -1432,6 +1554,7 @@ pub fn ComposeBox(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -1469,6 +1592,12 @@ pub fn ScrollColumn(
     /// the visible area, like CSS `scroll-snap-align: start`. Left out, it scrolls freely.
     #[props(default)]
     snap: Option<Snap>,
+    /// Called with a request to go back that no open overlay and no focused control
+    /// took. The innermost container with a handler hears it first; calling `consume`
+    /// on it stops it there, and leaving it lets the next container out hear it. Left
+    /// out, nothing is announced and the request passes this container by.
+    #[props(default)]
+    on_back_requested: Option<EventHandler<BackRequest>>,
     #[props(default)] weight: Option<f32>,
     /// With `false`, `weight` takes up to its share of the room left without stretching a
     /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
@@ -1483,6 +1612,10 @@ pub fn ScrollColumn(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -1555,6 +1688,7 @@ pub fn ScrollColumn(
     };
     rsx! {
         scrollcolumn {
+            onbackrequested: optional_listener(on_back_requested, BackRequest::clone),
             snap: opt_role(snap.filter(|snap| *snap != Snap::None)),
             onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
             match_parent_size: match_parent_size.then_some(true),
@@ -1575,6 +1709,7 @@ pub fn ScrollColumn(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -1610,6 +1745,12 @@ pub fn ScrollRow(
     /// the visible area, like CSS `scroll-snap-align: start`. Left out, it scrolls freely.
     #[props(default)]
     snap: Option<Snap>,
+    /// Called with a request to go back that no open overlay and no focused control
+    /// took. The innermost container with a handler hears it first; calling `consume`
+    /// on it stops it there, and leaving it lets the next container out hear it. Left
+    /// out, nothing is announced and the request passes this container by.
+    #[props(default)]
+    on_back_requested: Option<EventHandler<BackRequest>>,
     #[props(default)] weight: Option<f32>,
     /// With `false`, `weight` takes up to its share of the room left without stretching a
     /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
@@ -1624,6 +1765,10 @@ pub fn ScrollRow(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -1696,6 +1841,7 @@ pub fn ScrollRow(
     };
     rsx! {
         scrollrow {
+            onbackrequested: optional_listener(on_back_requested, BackRequest::clone),
             snap: opt_role(snap.filter(|snap| *snap != Snap::None)),
             onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
             match_parent_size: match_parent_size.then_some(true),
@@ -1716,6 +1862,7 @@ pub fn ScrollRow(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -1761,6 +1908,10 @@ pub fn Text(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -1912,6 +2063,7 @@ pub fn Text(
                     corner_radius: opt_dp(corner_radius),
                     corner_curve: opt_dp(corner_curve),
                     size_in: size_in.map(SizeIn::attribute),
+                    backdrop: backdrop.map(Backdrop::attribute),
                     aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
                     min_touch_target: opt_dp(min_touch_target),
                     overlay: opt_paint(overlay),
@@ -1989,6 +2141,10 @@ pub fn TextField(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -2103,6 +2259,7 @@ pub fn TextField(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -2155,6 +2312,10 @@ pub fn Button(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -2197,6 +2358,17 @@ pub fn Button(
     /// What happens to a label cut by `max_lines` or by a narrow button. Left out, an ellipsis.
     #[props(default)]
     overflow: Option<TextOverflow>,
+    /// The key that does the same thing, as text shown at the trailing edge of a menu
+    /// entry, such as "Ctrl+S". Only text: the key is not registered with the system,
+    /// because the application already handles it and would otherwise hear it twice.
+    /// Left out, nothing is sent.
+    #[props(into, default)]
+    shortcut_label: Option<String>,
+    /// Makes the button an item of the `Menu` it is in, one that can be chosen. A menu
+    /// made only of entries is one the operating system can put up as its own. Sent only
+    /// when true.
+    #[props(default)]
+    menu_entry: bool,
     #[props(default)] on_click: EventHandler<()>,
 ) -> Element {
     rsx! {
@@ -2216,6 +2388,7 @@ pub fn Button(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -2237,6 +2410,8 @@ pub fn Button(
             color: opt_paint(color),
             max_lines: i64::from(max_lines.unwrap_or(0)),
             overflow: role(overflow),
+            shortcut_label,
+            menu_entry: menu_entry.then_some(true),
             onclick: move |_| on_click.call(()),
         }
     }
@@ -2274,6 +2449,10 @@ pub fn Spacer(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -2360,6 +2539,7 @@ pub fn Spacer(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -2406,6 +2586,10 @@ pub fn LazyColumn(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -2443,6 +2627,7 @@ pub fn LazyColumn(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -2512,6 +2697,10 @@ pub fn Card(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -2635,6 +2824,7 @@ pub fn Card(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -2694,6 +2884,10 @@ pub fn Surface(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -2813,6 +3007,7 @@ pub fn Surface(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -2856,6 +3051,10 @@ pub fn Dialog(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -2889,6 +3088,7 @@ pub fn Dialog(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -2935,6 +3135,10 @@ pub fn Menu(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -2951,6 +3155,10 @@ pub fn Menu(
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
     #[props(default)] expanded: bool,
+    /// Makes this menu a submenu: an entry of the menu it is in that opens the entries
+    /// after its anchor, named by that anchor. Sent only when true.
+    #[props(default)]
+    menu_entry: bool,
     #[props(default)] on_dismiss: EventHandler<()>,
     anchor: Element,
     children: Element,
@@ -2969,6 +3177,7 @@ pub fn Menu(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -2984,6 +3193,7 @@ pub fn Menu(
             fill_max_width,
             fill_max_height,
             open: expanded,
+            menu_entry: menu_entry.then_some(true),
             ondismiss: move |_| on_dismiss.call(()),
             {anchor}
             {children}
@@ -3019,6 +3229,10 @@ pub fn Popover(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -3075,6 +3289,7 @@ pub fn Popover(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -3129,6 +3344,10 @@ pub fn Tabs(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -3161,6 +3380,7 @@ pub fn Tabs(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -3199,6 +3419,10 @@ pub fn TopAppBar(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -3244,6 +3468,7 @@ pub fn TopAppBar(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -3287,6 +3512,10 @@ pub fn LazyRow(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -3324,6 +3553,7 @@ pub fn LazyRow(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -3373,6 +3603,10 @@ pub fn Tooltip(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -3404,6 +3638,7 @@ pub fn Tooltip(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -3449,6 +3684,10 @@ pub fn Canvas(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -3479,6 +3718,7 @@ pub fn Canvas(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -3519,6 +3759,10 @@ pub fn Image(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -3553,6 +3797,7 @@ pub fn Image(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -3591,6 +3836,10 @@ pub fn Icon(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -3629,6 +3878,7 @@ pub fn Icon(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -3693,6 +3943,10 @@ pub fn NativeView(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -3725,6 +3979,7 @@ pub fn NativeView(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -3768,6 +4023,10 @@ pub fn DatePicker(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -3803,6 +4062,7 @@ pub fn DatePicker(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -3846,6 +4106,10 @@ pub fn TimePicker(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -3881,6 +4145,7 @@ pub fn TimePicker(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -3929,6 +4194,10 @@ pub fn Dropdown(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -3963,6 +4232,7 @@ pub fn Dropdown(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -4025,6 +4295,10 @@ pub fn Checkbox(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -4062,6 +4336,7 @@ pub fn Checkbox(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -4116,6 +4391,10 @@ pub fn RadioButton(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -4151,6 +4430,7 @@ pub fn RadioButton(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -4209,6 +4489,10 @@ pub fn Switch(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -4246,6 +4530,7 @@ pub fn Switch(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -4309,6 +4594,10 @@ pub fn Slider(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -4349,6 +4638,7 @@ pub fn Slider(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -4394,6 +4684,10 @@ pub fn ProgressIndicator(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -4426,6 +4720,7 @@ pub fn ProgressIndicator(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -4465,6 +4760,10 @@ pub fn Divider(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -4495,6 +4794,7 @@ pub fn Divider(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -4541,9 +4841,9 @@ fn is_on(value: f64) -> bool {
 /// selection in the Renderer and reports it by firing that destination's own `on_click`.
 #[component]
 pub fn Navigation(
-    /// What the destinations become in a compact window: the put-away sidebar, or nothing
-    /// at all so the screen reaches them its own way. Left out, or `Default`, the design
-    /// system's answer.
+    /// What the destinations become in a compact window: the put-away sidebar, a pill
+    /// floating over the bottom of the page (`Floating`), or nothing at all so the screen
+    /// reaches them its own way. Left out, or `Default`, the design system's answer.
     #[props(default)]
     compact: Option<CompactNavigation>,
     #[props(default)] weight: Option<f32>,
@@ -4560,6 +4860,10 @@ pub fn Navigation(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -4603,6 +4907,7 @@ pub fn Navigation(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -4657,6 +4962,10 @@ pub fn NavigationItem(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -4705,6 +5014,7 @@ pub fn NavigationItem(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -4763,6 +5073,17 @@ pub fn Sheet(
     /// Whether a bottom sheet draws its drag handle. Left out, the design system decides.
     #[props(default)]
     sheet_handle: Option<bool>,
+    /// The heights a bottom sheet may rest at: `SheetDetents::MEDIUM` is half the window,
+    /// `SheetDetents::LARGE` nearly all of it, and `MEDIUM | LARGE` opens at half and is
+    /// pulled up to nearly all. Which one it is at is the Renderer's and is never reported.
+    /// Left out, or `SheetDetents::NONE`, nothing is sent and the sheet has the one height
+    /// the design system gives it.
+    #[props(default)]
+    detents: compose_rust::SheetDetents,
+    /// Whether pulling a bottom sheet down closes it. Escape, the platform's back and a
+    /// press outside ask to close it either way. Left out, nothing is sent and it does.
+    #[props(default)]
+    drag_to_dismiss: Option<bool>,
     #[props(default)] weight: Option<f32>,
     /// With `false`, `weight` takes up to its share of the room left without stretching a
     /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
@@ -4777,6 +5098,10 @@ pub fn Sheet(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -4809,6 +5134,9 @@ pub fn Sheet(
                     .map(|fraction| fraction.min(1.0)),
             ),
             sheet_handle,
+            sheet_detents: (detents != compose_rust::SheetDetents::NONE)
+                .then(|| i64::from(detents.bits())),
+            sheet_drag_to_dismiss: drag_to_dismiss,
             weight: opt_dp(weight.filter(|_| weight_fill)),
             weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
@@ -4820,6 +5148,7 @@ pub fn Sheet(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -4952,6 +5281,10 @@ pub fn LazyGrid(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -4995,6 +5328,7 @@ pub fn LazyGrid(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -5052,6 +5386,10 @@ pub fn FileDropTarget(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -5091,6 +5429,7 @@ pub fn FileDropTarget(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -5140,6 +5479,10 @@ pub fn Chip(
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
     #[props(default)] padding_role: Option<SpaceRole>,
+    /// What the application drew behind the chip, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] fill_max_width: bool,
     #[props(into)] text: String,
     /// The meaning of a glyph before the label, never a picture.
@@ -5157,6 +5500,7 @@ pub fn Chip(
             height: opt_dp(height),
             padding: opt_dp(padding),
             padding_role: opt_role(padding_role),
+            backdrop: backdrop.map(Backdrop::attribute),
             fill_max_width,
             text,
             icon: opt_role(icon),
@@ -5231,6 +5575,10 @@ pub fn Badge(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -5271,6 +5619,7 @@ pub fn Badge(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -5323,6 +5672,10 @@ pub fn SelectionContainer(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -5410,6 +5763,7 @@ pub fn SelectionContainer(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -5477,6 +5831,10 @@ pub fn SplitPane(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -5536,6 +5894,7 @@ pub fn SplitPane(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),
@@ -5724,6 +6083,10 @@ pub fn CodeEditor(
     #[props(default)] corner_radius: Option<f32>,
     #[props(default)] corner_curve: Option<f32>,
     #[props(default)] size_in: Option<SizeIn>,
+    /// What the application drew behind the node, blurred, desaturated and tinted
+    /// inside its outline. Left out, nothing is sent.
+    #[props(default)]
+    backdrop: Option<Backdrop>,
     #[props(default)] aspect_ratio: Option<f32>,
     #[props(default)] match_height_constraints_first: bool,
     #[props(default)] min_touch_target: Option<f32>,
@@ -5835,6 +6198,7 @@ pub fn CodeEditor(
             corner_radius: opt_dp(corner_radius),
             corner_curve: opt_dp(corner_curve),
             size_in: size_in.map(SizeIn::attribute),
+            backdrop: backdrop.map(Backdrop::attribute),
             aspect_ratio: aspect_ratio_attr(aspect_ratio, match_height_constraints_first),
             min_touch_target: opt_dp(min_touch_target),
             overlay: opt_paint(overlay),

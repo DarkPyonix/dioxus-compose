@@ -178,6 +178,9 @@ fn surface() -> Element {
             },
             onunavailable: move |_| fired("window.onunavailable"),
             onclosed: move |_| fired("window.onclosed"),
+            onbackrequested: move |request: Event<BackRequest>| {
+                fired(format!("window.onbackrequested({:?})", request.data().source()))
+            },
             report_size: true,
             Scaffold {
                 background: Paint::Role(ColorRole::Background),
@@ -232,6 +235,10 @@ fn surface() -> Element {
                         size.width_dp, size.height_dp
                     )),
                     material: MaterialRole::Thin,
+                    backdrop: Backdrop::new(24.0, 1.8, SURFACE),
+                    on_back_requested: move |request: BackRequest| {
+                        fired(format!("Column.on_back_requested({:?})", request.source()))
+                    },
                     weight: 1.0,
                     fill_max_width: true,
                     fill_max_height: true,
@@ -595,6 +602,29 @@ fn surface() -> Element {
                         on_dismiss: move |_| fired("Menu.on_dismiss"),
                         anchor: rsx! { Text { text: "menu anchor" } },
                         Text { text: "menu entry" }
+                        // A menu item with the text of the key that does the same thing. Its
+                        // press is heard under the floating action's label, so whichever
+                        // button the handler table finds first, the expected call is made.
+                        Button {
+                            text: "Save",
+                            shortcut_label: "Ctrl+S",
+                            menu_entry: true,
+                            on_click: move |_| fired("Button.on_click"),
+                        }
+                        // A submenu, named by its anchor. Its dismissal is heard under the
+                        // same label, so whichever menu the handler table finds first, the
+                        // label it expects is the one called.
+                        Menu {
+                            expanded: true,
+                            menu_entry: true,
+                            on_dismiss: move |_| fired("Menu.on_dismiss"),
+                            anchor: rsx! { Text { text: "Export" } },
+                            Button {
+                                text: "PDF",
+                                menu_entry: true,
+                                on_click: move |_| fired("Button.on_click"),
+                            }
+                        }
                     }
                     Sheet {
                         open: true,
@@ -603,6 +633,8 @@ fn surface() -> Element {
                         sheet_handle: Some(false),
                         presentation: SheetPresentation::Centered,
                         max_width: 480_u32,
+                        detents: SheetDetents::MEDIUM | SheetDetents::LARGE,
+                        drag_to_dismiss: false,
                         on_dismiss: move |_| fired("Sheet.on_dismiss"),
                         Text { text: "sheet body" }
                     }
@@ -1334,6 +1366,24 @@ fn expectations() -> Vec<(WidgetKind, Vec<(PropertyKind, Expect)>)> {
                 (P::OnNativeViewFocus, Handler),
             ],
         ),
+        (
+            W::Sheet,
+            vec![
+                (P::SheetDetents, int(3)),
+                (P::SheetDragToDismiss, flag(false)),
+            ],
+        ),
+        (
+            W::Button,
+            vec![
+                (P::Text, text("Save")),
+                (P::ShortcutLabel, text("Ctrl+S")),
+                (P::MenuEntry, flag(true)),
+            ],
+        ),
+        (W::Menu, vec![(P::MenuEntry, flag(true))]),
+        (W::Column, vec![(P::OnBackRequested, Handler)]),
+        (W::Window, vec![(P::OnBackRequested, Handler)]),
     ]
 }
 
@@ -1853,6 +1903,22 @@ fn fr15_every_event_handler_written_in_rsx_is_called() {
             },
             "TextField.on_rich_text_change(note)",
         ),
+        (
+            W::Column,
+            P::OnBackRequested,
+            EventPayload::BackRequested {
+                source: BackSource::Escape,
+            },
+            "Column.on_back_requested(Escape)",
+        ),
+        (
+            W::Window,
+            P::OnBackRequested,
+            EventPayload::BackRequested {
+                source: BackSource::Escape,
+            },
+            "window.onbackrequested(Escape)",
+        ),
     ];
     let mut failures = Vec::new();
     for (kind, property, payload, label) in events.iter().cloned() {
@@ -2010,6 +2076,10 @@ fn nothing_asked() -> Element {
             Card { Text { text: "l" } }
             Surface { Text { text: "m" } }
             dioxus_compose::Box { background_brush: Vec::new(), Text { text: "n" } }
+            Sheet { detents: SheetDetents::NONE, Text { text: "p" } }
+            Button { text: "q" }
+            Menu { anchor: rsx! { Text { text: "r" } }, Text { text: "s" } }
+            LazyRow { item_count: 1, item: move |_| rsx! { Text { text: "t" } } }
         }
     }
 }
@@ -2081,6 +2151,11 @@ fn fr15_what_a_screen_leaves_out_is_never_sent() {
         P::FixedGutterColumns,
         P::NativeVisible,
         P::OnNativeViewFocus,
+        P::OnBackRequested,
+        P::SheetDetents,
+        P::SheetDragToDismiss,
+        P::ShortcutLabel,
+        P::MenuEntry,
     ];
     let sent: Vec<String> = mutations
         .iter()
@@ -2099,7 +2174,8 @@ fn fr15_what_a_screen_leaves_out_is_never_sent() {
                     | Modifier::MinTouchTarget { .. }
                     | Modifier::Overlay(_)
                     | Modifier::Sticky
-                    | Modifier::UnboundedWidth,
+                    | Modifier::UnboundedWidth
+                    | Modifier::Backdrop { .. },
                 ..
             } => Some(format!("{mutation:?}")),
             // A native view with no view is not handed one.
