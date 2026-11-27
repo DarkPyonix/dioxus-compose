@@ -226,25 +226,57 @@ fn property_functions_3d(
 /// Turns a box's 2D or 3D transform into a 3D one, for a box whose motion of `transform`
 /// passes through a 3D transform: a renderer plays that motion as a matrix on the box's
 /// 3D transform, so the box needs one even where it rests flat or untransformed.
+///
+/// A flat transform is lifted with the functions `style` writes when its 2D form dropped
+/// some (see [`dropped_flat_3d`]), so that `rotateX(0deg) translateX(10px)` is lifted as
+/// a turn about x and a move, which line up with `rotateX(360deg) translateX(20px)`.
 pub(crate) fn lifted(moved: Moved, style: &ComputedValues, width: f32, height: f32) -> Moved {
-    let depth = origin_depth(style);
-    let hidden = backface_hidden(style);
-    match moved {
-        Moved::ThreeD(transform) => Moved::ThreeD(transform),
-        Moved::Matrix(transform) => Moved::ThreeD(Transform3D::from_2d(&transform, depth, hidden)),
-        Moved::Translated(x, y) => Moved::ThreeD(Transform3D::new(
+    let written = dropped_flat_3d(&moved, style, width, height);
+    let (functions, origin) = match moved {
+        Moved::ThreeD(transform) => return Moved::ThreeD(transform),
+        Moved::Matrix(transform) => (
+            transform
+                .functions
+                .iter()
+                .map(TransformFunction3D::from_2d)
+                .collect(),
+            transform.origin,
+        ),
+        Moved::Translated(x, y) => (
             vec![TransformFunction3D::Translate(x, y, 0.0)],
             origin_of(style, width, height),
-            depth,
-            hidden,
-        )),
-        Moved::Nothing => Moved::ThreeD(Transform3D::new(
-            Vec::new(),
-            origin_of(style, width, height),
-            depth,
-            hidden,
-        )),
-    }
+        ),
+        Moved::Nothing => (Vec::new(), origin_of(style, width, height)),
+    };
+    Moved::ThreeD(Transform3D::new(
+        written.unwrap_or(functions),
+        origin,
+        origin_depth(style),
+        backface_hidden(style),
+    ))
+}
+
+/// The functions `style` writes, each in its 3D form, when the flat transform `moved`
+/// stands for has fewer of them: a 3D function whose arguments leave it flat
+/// (`rotateX(0deg)`, `translateZ(0)`, `scaleZ(1)`) has no 2D form, so the 2D transform
+/// leaves it out. A transition from such a transform to `rotateX(360deg)` turns a whole
+/// turn about x, and only the full list says so: the matrices of the two ends are the
+/// same. `None` when nothing was left out, and for a 3D transform, which keeps every
+/// function itself.
+pub(crate) fn dropped_flat_3d(
+    moved: &Moved,
+    style: &ComputedValues,
+    width: f32,
+    height: f32,
+) -> Option<Vec<TransformFunction3D>> {
+    let kept = match moved {
+        Moved::ThreeD(_) => return None,
+        Moved::Matrix(transform) => transform.functions.len(),
+        Moved::Translated(..) => 1,
+        Moved::Nothing => 0,
+    };
+    let written = functions_3d(style, width, height);
+    (written.len() != kept).then_some(written)
 }
 
 /// A parent's `perspective` as its children see it: the viewer's distance from the plane,

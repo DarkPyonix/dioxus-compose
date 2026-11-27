@@ -1022,6 +1022,10 @@ html, body { margin: 0; padding: 0; }
 @keyframes swing { from { transform: rotateX(0deg); } to { transform: rotateX(270deg); } }
 #swing { width: 40px; height: 40px; animation: swing 2s ease-in-out infinite; }
 #stair { width: 40px; height: 40px; animation: tumble 4s steps(4) infinite; }
+#roll { width: 100px; height: 50px; transform: rotateX(0deg) translateX(10px); transition: transform 1s linear; }
+#roll.on { transform: rotateX(360deg) translateX(20px); }
+#slide { width: 100px; height: 50px; transform: translateX(10px); transition: transform 1s linear; }
+#slide.on { transform: rotateX(360deg) translateX(20px); }
 "#;
 
 fn through_3d_config() -> HtmlConfig {
@@ -1252,6 +1256,102 @@ fn fr34_2_a_rotation_of_180_degrees_or_more_is_split() {
     for pair in angles[..3].windows(2) {
         assert!((pair[1] - pair[0]).abs() < 180.0, "{angles:?}");
     }
+}
+
+fn roll() -> Element {
+    let mut presses = use_signal(|| 0u32);
+    let class = if presses() % 2 == 1 { "on" } else { "" };
+    rsx! { div { id: "roll", class: "{class}", onclick: move |_| presses += 1 } }
+}
+
+fn slide() -> Element {
+    let mut presses = use_signal(|| 0u32);
+    let class = if presses() % 2 == 1 { "on" } else { "" };
+    rsx! { div { id: "slide", class: "{class}", onclick: move |_| presses += 1 } }
+}
+
+/// `rotateX(degrees) translateX(x)`: the turn's matrix with the move, which a turn about x
+/// leaves along x, in its last column.
+fn rotate_x_then_move(degrees: f32, x: f32) -> [f32; 16] {
+    let mut m = rotate_x(degrees);
+    m[12] = x;
+    m
+}
+
+/// The one transition a click on the app's box starts.
+fn clicked_transition(app: fn() -> Element) -> dioxus_compose::schema::Animation<'static> {
+    let mut host = Host::html(app, through_3d_config);
+    let first = owned(host.rebuild().unwrap());
+    assert!(started(&first).is_empty(), "{first:#?}");
+    let target = clickable(&first);
+    let changed = click(&mut host, target);
+    let sent = started(&changed);
+    assert_eq!(sent.len(), 1, "one transition: {changed:#?}");
+    assert_eq!(sent[0].node_id, target.0);
+    assert_eq!(sent[0].property, AnimatedProperty::Transform3D);
+    sent[0].clone()
+}
+
+/// A transition that starts from a flat transform is cut like one that starts from a 3D
+/// one when the two function lists line up.
+///
+/// - `#roll` rests at `rotateX(0deg) translateX(10px)`, flat, and a click takes it to
+///   `rotateX(360deg) translateX(20px)` with `transition: transform 1s linear`. The two
+///   ends are the same turn as matrices, so played as two keyframes it would not turn at
+///   all. The start keeps its `rotateX(0deg)`, the lists line up, and the whole turn is cut
+///   into three of 120 degrees: keyframes at 0, 1/3, 2/3 and 1, the ones between
+///   `rotateX(120deg)` and `rotateX(240deg)` with the move a third and two thirds of the
+///   way from 10px to 20px. The box turns about its centre, which its `Transform3D`
+///   modifier carries, so the matrices have no origin in them.
+/// - `#slide` rests at `translateX(10px)` and goes to the same end. Its lists do not line
+///   up (a move against a turn and a move), so CSS interpolates the two as matrices and
+///   the transition is sent as its two ends, not cut.
+#[test]
+fn fr34_2_a_transition_from_a_flat_start_is_split_too() {
+    let animation = clicked_transition(roll);
+    assert_eq!((animation.origin_x, animation.origin_y), (0.0, 0.0));
+    let keyframes = &animation.keyframes;
+    assert_eq!(keyframes.len(), 4, "{keyframes:#?}");
+    assert!(keyframes[0].from_presented);
+    for (index, keyframe) in keyframes.iter().enumerate() {
+        let share = index as f32 / 3.0;
+        assert!(
+            (keyframe.offset - share).abs() < 1e-6,
+            "keyframe {index} is at {}, not {share}",
+            keyframe.offset
+        );
+        assert_eq!(keyframe.timing, Timing::Linear, "keyframe {index}");
+        assert_matrix(
+            matrix_of(&keyframe.value),
+            rotate_x_then_move(120.0 * index as f32, 10.0 + 10.0 * share),
+            1e-4,
+            &format!("keyframe {index}"),
+        );
+    }
+    let angles: Vec<f32> = keyframes
+        .iter()
+        .map(|keyframe| angle_about_x(matrix_of(&keyframe.value)))
+        .collect();
+    for pair in angles[..3].windows(2) {
+        assert!((pair[1] - pair[0]).abs() < 180.0, "{angles:?}");
+    }
+
+    let animation = clicked_transition(slide);
+    let keyframes = &animation.keyframes;
+    assert_eq!(keyframes.len(), 2, "not cut: {keyframes:#?}");
+    assert_eq!((keyframes[0].offset, keyframes[1].offset), (0.0, 1.0));
+    assert_matrix(
+        matrix_of(&keyframes[0].value),
+        rotate_x_then_move(0.0, 10.0),
+        1e-4,
+        "the start",
+    );
+    assert_matrix(
+        matrix_of(&keyframes[1].value),
+        rotate_x_then_move(360.0, 20.0),
+        1e-4,
+        "the end",
+    );
 }
 
 fn swing() -> Element {
