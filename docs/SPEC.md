@@ -734,6 +734,7 @@ tag 16, 24바이트: node_id: u32, handler_id: u64, value: f64
 - `DatePicker`가 세 시스템에서 **서로 다른 고르기 방식**으로 나타납니다. 같은 모양을 세 번 그린 것이면 실패입니다.
 - 위젯을 추가해도 `DesignSystem` enum과 규칙 테이블 외에는 바뀌지 않습니다(FR-14.2 회귀 검사).
 - 각 위젯에 프로토콜 왕복 테스트가 있습니다(PR-4 벡터).
+- [리더, 2026-11-27] **compose-rust 8a5c5f11의 새 어휘.** 모든 위젯의 `weight_fill: false`는 `weight`와 함께 `Weight` 대신 `WeightUnfilled`(Compose `weight(w, fill = false)`)를 보낸다(`weight_unfilled` 속성, 같은 수정자 자리). `CodeEditor`는 `fold_column_width`(dp, `FoldColumnWidthDp` 226)와 `insert_spaces`(`InsertSpaces` 227)를 받는다. `TextField`의 `rich_text`는 `use_rich_text()`가 주는 `RichTextHandle`을 받아 `RichText`(220)를 켜고 핸들을 그 필드에 붙인다. `handle.format(Format)`은 `FormatText`를, `handle.load(RichDocument)`는 `SetRichText`를 그 필드로 보내고, 같은 호출에서 그 필드가 만들어졌으면 그 배치로 나간다. 어느 필드도 들지 않은 핸들의 명령은 `CodeEditorHandle`처럼 버린다. `on_text_format`(`TextFormat`, `OnTextFormat` 221)과 `on_rich_text_change`(`RichDocument`, `OnRichTextChanged` 222)가 렌더러의 답을 받고, `handle.format_at_selection()`과 `handle.document()`는 마지막 답을 읽는다. 테스트 `fr15_weight_fill_false_sends_weight_unfilled`, `fr15_rich_text_field_sends_rich_text_and_its_handlers`, `fr15_rich_text_handle_sends_format_and_load`, `fr15_rich_text_events_reach_their_handlers`, 그리고 `rsx_surface`의 기대 표.
 
 #### 15.5.1 `use_hover` (`Draft`)
 
@@ -1958,7 +1959,7 @@ M12 이후 과제이고, 10-18까지 넣습니다(소유자 결정 2026-10-03: "
 10. `transform-style: preserve-3d`인 요소의 자식은 평면으로 합성되어 그려지고, Host는 어느 요소에서 그렇게 했는지 개발자에게 경고한다. 프로세스는 중단되지 않는다. 테스트 `fr34_1_preserve_3d_warns_and_flattens` (통과, 2026-11-15).
 11. **부모의 `perspective` 속성**([leader, provisional] (darkpyonix leader, 2026-11-15), 이슈 #46). 부모에 `perspective: <길이>`(와 `perspective-origin`)가 있으면 그 자식의 3D 변환은 CSS가 정한 대로 그 원근을 받는다. Host가 부모의 원근 행렬을 자식의 행렬 앞에 접어 넣어 `Transform3D` 하나로 보내며, `perspective()` 함수와 같은 방식으로 따로 실리는 값은 없다. `perspective: none`이나 속성이 없는 부모는 지금과 같다. 카드 뒤집기 CSS가 흔히 이 속성을 쓴다. 테스트 `fr34_1_parent_perspective_property_folds_into_the_child_matrix` (통과, 2026-11-15).
 
-**알려진 한계(리더 결정 2026-11-15).** 3D 변환을 지나는 움직임은 재생하지 않는다. compose-rust의 `KeyframeValue::Transform`이 2D 함수만 싣기 때문에, 3D 변환으로 가거나 3D 변환에서 오는 transition은 끝 값이 바로 적용되고, 3D 키프레임이 있는 `@keyframes`에는 transform 트랙이 없다. Host는 어느 요소에서 그렇게 했는지 개발자에게 경고한다(`fr34_2_a_motion_through_a_3d_transform_is_not_played_and_is_named`). compose-rust가 3D 키프레임을 실을 수 있게 되면 이 한계를 없앤다.
+**3D 변환을 지나는 움직임(리더, 2026-11-27, compose-rust FR-41.2.1).** `transform`의 transition이나 `@keyframes`에서 어느 키프레임이라도 3D 변환이면, Host는 키프레임마다 변환을 원점을 뺀 4x4 행렬로 접어 `AnimatedProperty::Transform3D`로 보낸다(2D 키프레임도 행렬로). 그런 움직임이 걸린 노드는 그동안 쉬는 변환도 `Transform3D` 수정자로 단다(원점과 `backface-visibility`는 그 수정자의 것). 이웃한 두 키프레임의 함수 목록이 짝이 맞고 그 사이 회전이 180도 이상이면, Host는 그 구간을 함수별 보간으로 180도 미만의 구간들로 나눠 키프레임을 더 보내고, 나눈 구간의 타이밍은 원래 곡선을 이어 붙인 것이 되게 한다(`cubic-bezier`는 그 지점에서 나눈 곡선, `linear`는 그대로, `steps`는 계단마다 `steps(1)` 키프레임). 짝이 맞지 않으면 나누지 않고 렌더러의 행렬 보간을 따른다(CSS도 그렇다). 경고는 내지 않는다. 테스트 `fr34_2_a_transition_through_a_3d_transform_plays_as_matrix_keyframes`, `fr34_2_a_3d_keyframes_animation_plays_as_matrix_keyframes`, `fr34_2_a_rotation_of_180_degrees_or_more_is_split`, `fr34_2_a_split_segment_keeps_its_curve`.
 
 #### FR-34.2 CSS transition과 animation (`Agreed`, 목표 M14 10-18 / M15)
 
@@ -2040,6 +2041,7 @@ Code-OSS 워크벤치가 쓰는 CSS와 입력 중 dioxus-compose에 없는 것�
 수용 기준:
 1. 포인터 이동, hover 상태, `:hover`와 `:active`. 포인터가 노드 위에 있는 동안 `:hover` 규칙이 맞고, 포인터가 움직이면 hover가 따라 움직이며, `mouseenter`, `mouseleave`가 핸들러에 도착합니다. 리스트 행, 탭, 액션바, 스크롤바 슬라이더가 쓰는 규칙으로 확인합니다. 테스트 `fr34_5_hover_matches_hover_rule`, `fr34_5_hover_moves_with_pointer`, `fr34_5_mouseenter_leave_reach_handlers`. Host만(경계 호출 확인 전제).
 2. `mousedown`, `mouseup`, `dblclick`, `contextmenu`, `wheel`, drag와 포인터 캡처. 적중 판정은 FR-34의 변환된 모양 기준을 재사용하고, 포인터 캡처가 걸린 동안은 포인터가 창 밖으로 나가도 이동과 `mouseup`이 캡처한 노드에 갑니다(분할선 끌기). 테스트 `fr34_5_dblclick_reaches_handler`, `fr34_5_contextmenu_targets_node`, `fr34_5_wheel_reaches_handler`, `fr34_5_pointer_capture_sash_drag`. Host만(경계 호출 확인 전제).
+   - [리더, 2026-11-27] `HtmlDom::double_click_node(node)`는 렌더러가 두 번 누름을 보고하는 순서를 그 노드 상자의 가운데에서 그대로 보낸다: 누름과 뗌(클릭 수 1), 클릭, 누름과 뗌(클릭 수 2, 이때 `dblclick`), 클릭. 그래서 `ondoubleclick` 핸들러가 한 번 돈다. 두 번의 `click_node`는 `dblclick`을 보내지 않는다. 테스트 `fr34_5_double_click_node_runs_dblclick_once`, `fr34_5_two_single_clicks_do_not_fire_dblclick`. (이슈 #312)
 3. `outline`과 `outline-offset`. 아웃라인은 테두리 상자 바깥에 그려지고 레이아웃에 영향을 주지 않으며, 음수 오프셋은 안쪽으로 들어옵니다. 포커스 링(리스트, 퀵 입력)으로 확인합니다. 테스트 `fr34_5_outline_drawn_outside_border_box`, `fr34_5_outline_negative_offset`. 기존 테두리 원소로 그릴 수 있으면 Host만이고, 새 원소가 필요하면 compose-rust 의존입니다.
 4. `@font-face`와 codicon 아이콘 글꼴. `@font-face`로 선언한 글꼴이 등록되고 `::before`의 사설 영역 글리프가 그 글꼴로 그려집니다. 이것이 없으면 액티비티 바가 빈 상자입니다. 테스트 `fr34_5_font_face_registers_family` (예정), `fr34_5_codicon_glyph_draws_from_before` (예정). **compose-rust 의존**: 글꼴 등록 호출이 경계에 필요합니다(PR-2 변경). compose-rust가 먼저입니다.
 5. `pointer-events`, `cursor`, `user-select`. `pointer-events: none`인 노드는 적중 판정에서 건너뜁니다. `cursor`는 적중한 노드의 값이 렌더러에 보고되어 포인터 모양이 바뀝니다. `user-select: none`인 노드는 선택되지 않습니다(선택은 렌더러 소유, D5). 테스트 `fr34_5_pointer_events_none_skips_hit`, `fr34_5_cursor_reported_for_hit_node`, `fr34_5_user_select_none_blocks_selection`. `pointer-events`는 Host만이고 먼저 낼 수 있습니다. `cursor`와 `user-select`는 **compose-rust 의존**입니다.
@@ -2244,6 +2246,7 @@ FR-9이 텍스트 하나에 대해 정한 것을 문서 하나로 넓힙니다. 
 #### 38.1 요소와 컴포넌트
 
 - `CodeEditor` 컴포넌트와 `codeeditor` 요소가 있다. 속성은 `text`(처음 내용, 버전 0), `syntax_spans`, `decorations`, `tab_width`, `handle`, 그리고 다른 위젯과 같은 크기, 패딩, 배경, 테두리 속성이다.
+  - [리더, 2026-11-25] `font_feature_settings`(`FontFeatures`, `Text`와 같은 8바이트 레코드, 속성 192)도 받는다. 렌더러는 그것을 편집기의 글에 적용하고 줄 번호는 디자인 시스템의 것을 쓴다(compose-rust FR-83, #1080). 빈 목록은 속성을 보내지 않는다. 테스트 `fr38_code_editor_font_feature_settings_reach_the_wire`, `fr38_code_editor_empty_font_features_send_nothing`.
 - 이벤트 핸들러는 `on_change`(확정된 변경, `OnValueChange`), `on_edit_rejected`, `on_hover`, `on_save`, `on_decoration_click`이다.
 - `text`가 편집기가 든 글과 같으면 아무 레코드도 나가지 않는다. 비어 있는 `syntax_spans`와 `decorations`는 속성을 보내지 않는다.
 - `use_code_editor()`가 `CodeEditorHandle`을 준다. 핸들로 `EditCode` 명령을 보낸다(서식 맞춤, 완성 수락, 파일 다시 읽기). 핸들이 어느 편집기에도 붙어 있지 않으면 그 편집은 버려진다.

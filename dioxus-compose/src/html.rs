@@ -31,8 +31,8 @@
 //! [`PlanModifier::Transform3D`]), with `backface-visibility` beside it, and is hit-tested
 //! the same way. `transform-style: preserve-3d` is drawn flat, and the elements that ask
 //! for it are named in [`DisplayList::flattened_spaces`]. A motion of `transform` that
-//! passes through a 3D transform is not played, and is named in
-//! [`DisplayList::skipped_transforms`]. A CSS transition or `@keyframes` animation
+//! passes through a 3D transform is played as 4x4 matrices
+//! ([`AnimatedValue::Transform3D`]). A CSS transition or `@keyframes` animation
 //! of `opacity`, `transform` or `background-color` is described for the renderer to play
 //! ([`TransitionStart`], [`NodeEntry::animations`]), and one that changes layout is ticked by
 //! the Host ([`HtmlDom::set_time`], [`HtmlDom::needs_frames`], [`HtmlDom::tick`]).
@@ -103,7 +103,7 @@ pub use crate::paint::display_list::{
     Keyframe, LinearGradient, MarkerShape, MarkerSymbol, Matrix2D, Matrix3D, NodeEntry, ObjectFit,
     Outline, PlaneMap, PlayDirection, RadialGradient, Radius, Rect, ReplacedImage, Rgba, RunMarker,
     ScrollContainer, Sides, SkippedTransform, StepPosition, TextAlign, TextDecoration, TextRun,
-    TileRepeat, Transform2D, Transform3D, TransformFunction, TransitionStart,
+    TileRepeat, Transform2D, Transform3D, TransformFunction, TransformFunction3D, TransitionStart,
 };
 pub use crate::paint::plan::{
     BorderSide, Brush, BrushId, ColourResolver, ColourUse, LiteralColours, ModifierSlot, Plan,
@@ -157,7 +157,8 @@ pub fn layout_document_with(
     // A bare document has no page behind it to listen.
     layout::set_listening(Default::default());
     let texts = layout::run_layout(doc, measurer);
-    build::build_display_list(doc, &texts, &mut lookup, None)
+    let no_scroll = std::collections::HashMap::new();
+    build::build_display_list(doc, &texts, &mut lookup, None, &no_scroll)
 }
 
 /// What an app needs in scope to write `rsx!` with HTML elements.

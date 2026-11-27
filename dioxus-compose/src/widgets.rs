@@ -456,6 +456,107 @@ fn aspect_ratio_attr(
     })
 }
 
+/// Discrete pointer gesture handlers on a widget, merged into the node's single
+/// `pointer_kinds` mask and `on_pointer` callback so no extra wire properties are needed.
+#[derive(Clone, Copy, Default)]
+struct PointerGestures {
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    on_scroll: Option<EventHandler<PointerEvent>>,
+}
+
+impl PointerGestures {
+    /// Combined `pointer_kinds` bitmask from an explicit `pointer_kinds` prop and every
+    /// discrete gesture handler that is set. Returns `None` when nothing is subscribed.
+    fn kinds(&self, explicit: Option<PointerKinds>) -> Option<i64> {
+        let mut mask = explicit.unwrap_or(PointerKinds::NONE);
+        if self.on_pointer_enter.is_some() {
+            mask = mask.union(PointerKinds::ENTER);
+        }
+        if self.on_pointer_leave.is_some() {
+            mask = mask.union(PointerKinds::LEAVE);
+        }
+        if self.on_pointer_move.is_some() {
+            mask = mask.union(PointerKinds::MOVE);
+        }
+        if self.on_long_press.is_some() {
+            mask = mask.union(PointerKinds::DOWN);
+        }
+        if self.on_context_menu.is_some() {
+            mask = mask.union(PointerKinds::CONTEXT_MENU);
+        }
+        if self.on_drag_start.is_some() {
+            mask = mask.union(PointerKinds::DOWN);
+        }
+        if self.on_drag_move.is_some() {
+            mask = mask.union(PointerKinds::MOVE);
+        }
+        if self.on_drag_end.is_some() {
+            mask = mask.union(PointerKinds::UP).union(PointerKinds::CANCEL);
+        }
+        if self.on_scroll.is_some() {
+            mask = mask.union(PointerKinds::WHEEL);
+        }
+        (mask != PointerKinds::NONE).then(|| i64::from(mask.bits()))
+    }
+
+    /// Routes an incoming pointer event to matching discrete gesture handlers and then to
+    /// the widget's general `on_pointer` handler.
+    fn dispatch(&self, on_pointer: EventHandler<PointerEvent>, event: PointerEvent) {
+        use compose_rust::schema::PointerKind;
+        match event.kind() {
+            PointerKind::Enter => {
+                if let Some(handler) = self.on_pointer_enter {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::Leave => {
+                if let Some(handler) = self.on_pointer_leave {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::Move => {
+                if let Some(handler) = self.on_pointer_move {
+                    handler.call(event.clone());
+                }
+                if let Some(handler) = self.on_drag_move {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::Down => {
+                if let Some(handler) = self.on_long_press {
+                    handler.call(event.clone());
+                }
+                if let Some(handler) = self.on_drag_start {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::Up | PointerKind::Cancel => {
+                if let Some(handler) = self.on_drag_end {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::Wheel => {
+                if let Some(handler) = self.on_scroll {
+                    handler.call(event.clone());
+                }
+            }
+            PointerKind::ContextMenu => {
+                if let Some(handler) = self.on_context_menu {
+                    handler.call(event.clone());
+                }
+            }
+        }
+        on_pointer.call(event);
+    }
+}
+
 /// A box that places each child where the Host already put it, for a screen whose layout
 /// was computed before it got here, such as an HTML page laid out by a CSS engine.
 ///
@@ -550,6 +651,33 @@ pub fn AbsoluteBox(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -562,6 +690,17 @@ pub fn AbsoluteBox(
     island_zoom: Option<f32>,
 ) -> Element {
     use compose_rust::Modifier;
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     let (origin_x, origin_y) = transform_origin.unwrap_or((0.5, 0.5));
     // An animated value takes the place of the plain one in the same slot, and a graphics
     // layer takes the place of a bare transform and opacity.
@@ -609,9 +748,9 @@ pub fn AbsoluteBox(
             island_zoom: island_zoom.map(f64::from),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             offset: offset.map(|(x, y)| AttributeValue::any_value(Modifier::Offset { x, y })),
             required_size: required_size.map(|(width, height)| {
                 AttributeValue::any_value(Modifier::RequiredSize { width, height })
@@ -670,6 +809,10 @@ pub fn Column(
     #[props(default)]
     on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -731,6 +874,33 @@ pub fn Column(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -743,6 +913,17 @@ pub fn Column(
     #[props(default)]
     on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         column {
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
@@ -751,9 +932,9 @@ pub fn Column(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             tear_off_key,
             onwindowdragover: on_window_drag_over.map(|handler| {
                 dioxus_core::ListenerCallback::new(
@@ -765,7 +946,8 @@ pub fn Column(
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -824,6 +1006,10 @@ pub fn Row(
     #[props(default)]
     on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -885,6 +1071,33 @@ pub fn Row(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -897,6 +1110,17 @@ pub fn Row(
     #[props(default)]
     on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         row {
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
@@ -905,9 +1129,9 @@ pub fn Row(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             tear_off_key,
             onwindowdragover: on_window_drag_over.map(|handler| {
                 dioxus_core::ListenerCallback::new(
@@ -919,7 +1143,8 @@ pub fn Row(
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -965,6 +1190,10 @@ pub fn Row(
 #[component]
 pub fn FlowRow(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -1008,7 +1237,8 @@ pub fn FlowRow(
 ) -> Element {
     rsx! {
         flowrow {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -1065,6 +1295,10 @@ pub fn ComposeBox(
     #[props(default)]
     on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -1115,6 +1349,33 @@ pub fn ComposeBox(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -1127,6 +1388,17 @@ pub fn ComposeBox(
     #[props(default)]
     on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         composebox {
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
@@ -1135,9 +1407,9 @@ pub fn ComposeBox(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             tear_off_key,
             onwindowdragover: on_window_drag_over.map(|handler| {
                 dioxus_core::ListenerCallback::new(
@@ -1149,7 +1421,8 @@ pub fn ComposeBox(
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -1197,6 +1470,10 @@ pub fn ScrollColumn(
     #[props(default)]
     snap: Option<Snap>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -1237,7 +1514,45 @@ pub fn ScrollColumn(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         scrollcolumn {
             snap: opt_role(snap.filter(|snap| *snap != Snap::None)),
@@ -1247,9 +1562,10 @@ pub fn ScrollColumn(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
-            weight: opt_dp(weight),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -1295,6 +1611,10 @@ pub fn ScrollRow(
     #[props(default)]
     snap: Option<Snap>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -1335,7 +1655,45 @@ pub fn ScrollRow(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         scrollrow {
             snap: opt_role(snap.filter(|snap| *snap != Snap::None)),
@@ -1345,9 +1703,10 @@ pub fn ScrollRow(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
-            weight: opt_dp(weight),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -1389,6 +1748,10 @@ pub fn Text(
     #[props(into, default)]
     font_feature_settings: FontFeatures,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -1471,7 +1834,45 @@ pub fn Text(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     // Worked out before the element, because the run list travels twice: its records as
     // `spans` and its font table as `span_fonts`, and only one of them can take it.
     let span_fonts = (spans.font_entry_count() > 0)
@@ -1498,9 +1899,10 @@ pub fn Text(
                     press_feedback: opt_press_feedback(press_feedback),
                     cursor: opt_role(cursor),
                     user_select: opt_role(user_select),
-                    pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
-                    onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
-                    weight: opt_dp(weight),
+                    pointer_kinds: pointer_gestures.kinds(pointer_kinds),
+                    onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
+                    weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
                     width: opt_dp(width),
                     height: opt_dp(height),
                     padding: opt_dp(padding),
@@ -1574,6 +1976,10 @@ pub fn TextField(
     #[props(default)]
     on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -1635,14 +2041,59 @@ pub fn TextField(
     /// When true, the field stays focusable and selectable (including copy) while rejecting edits.
     #[props(default)]
     read_only: bool,
+    /// Makes the field a rich text field bound to this handle: the Renderer keeps character
+    /// and paragraph formatting for its text, takes the handle's `format` and `load`, and
+    /// reports back the formatting at the selection and the document. Left out, a plain
+    /// field.
+    #[props(default)]
+    rich_text: Option<crate::RichTextHandle>,
+    /// Called with the formatting at the selection of a rich field whenever it changes.
+    #[props(default)]
+    on_text_format: Option<EventHandler<compose_rust::rich_text::TextFormat>>,
+    /// Called with a rich field's whole document after the reader pauses.
+    #[props(default)]
+    on_rich_text_change: Option<EventHandler<compose_rust::rich_text::RichDocument>>,
 ) -> Element {
+    // A rich field always listens, so its handle keeps the field's last answers whether or
+    // not the application has a handler of its own.
+    let text_format = (rich_text.is_some() || on_text_format.is_some()).then(|| {
+        dioxus_core::ListenerCallback::new(
+            move |event: dioxus_core::Event<compose_rust::rich_text::TextFormat>| {
+                let format = *event.data();
+                if let Some(handle) = rich_text {
+                    handle.heard_format(format);
+                }
+                if let Some(handler) = on_text_format {
+                    handler.call(format);
+                }
+            },
+        )
+    });
+    let rich_text_changed = (rich_text.is_some() || on_rich_text_change.is_some()).then(|| {
+        dioxus_core::ListenerCallback::new(
+            move |event: dioxus_core::Event<compose_rust::rich_text::RichDocument>| {
+                let document = event.data().as_ref().clone();
+                if let Some(handle) = rich_text {
+                    handle.heard_document(document.clone());
+                }
+                if let Some(handler) = on_rich_text_change {
+                    handler.call(document);
+                }
+            },
+        )
+    });
     rsx! {
         textfield {
+            rich_text: rich_text.map(|_| true),
+            editor: rich_text.map(|handle| i64::from(handle.token())),
+            ontextformat: text_format,
+            onrichtextchanged: rich_text_changed,
             placeholder_color: opt_paint(placeholder_color),
             caret_color: opt_paint(caret_color),
             read_only: read_only.then_some(true),
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -1691,6 +2142,10 @@ pub fn Button(
     #[props(default)] window_drag: Option<bool>,
     #[props(default)] press_feedback: Option<(f32, f32)>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -1750,7 +2205,8 @@ pub fn Button(
             window_drag,
             press_feedback: opt_press_feedback(press_feedback),
             button_kind: opt_role(button_kind),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -1805,6 +2261,10 @@ pub fn Separator(#[props(default)] color: Option<Paint>) -> Element {
 #[component]
 pub fn Spacer(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -1844,14 +2304,53 @@ pub fn Spacer(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         spacer {
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
-            weight: opt_dp(weight),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -1894,6 +2393,10 @@ pub fn LazyColumn(
     #[props(default)]
     on_scroll_changed: Option<EventHandler<ScrollChange>>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -1929,7 +2432,8 @@ pub fn LazyColumn(
     rsx! {
         lazycolumn {
             onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -1995,6 +2499,10 @@ pub fn Card(
     #[props(default)]
     on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -2044,6 +2552,33 @@ pub fn Card(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -2056,6 +2591,17 @@ pub fn Card(
     #[props(default)]
     on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         card {
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
@@ -2064,9 +2610,9 @@ pub fn Card(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             tear_off_key,
             onwindowdragover: on_window_drag_over.map(|handler| {
                 dioxus_core::ListenerCallback::new(
@@ -2078,7 +2624,8 @@ pub fn Card(
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -2134,6 +2681,10 @@ pub fn Surface(
     #[props(default)]
     on_motion_finished: Option<EventHandler<MotionFinished>>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -2179,6 +2730,33 @@ pub fn Surface(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
     /// Makes the node respond to a press. Left out, nothing is written for it and it takes
     /// no press. What a press looks like is the design system's, and press feedback for
     /// these nodes is not drawn yet (tracked as compose-rust #305).
@@ -2191,6 +2769,17 @@ pub fn Surface(
     #[props(default)]
     on_window_drag_over: Option<EventHandler<compose_rust::WindowDragOver>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         surface {
             onmotionfinished: optional_listener(on_motion_finished, |size: &MotionFinished| *size),
@@ -2199,9 +2788,9 @@ pub fn Surface(
             press_feedback: opt_press_feedback(press_feedback),
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
             onclickable: on_click.map(|handler| dioxus_core::ListenerCallback::new(move |_: dioxus_core::Event<()>| handler.call(()))),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
             tear_off_key,
             onwindowdragover: on_window_drag_over.map(|handler| {
                 dioxus_core::ListenerCallback::new(
@@ -2213,7 +2802,8 @@ pub fn Surface(
             observe_size,
             motion: opt_role(motion),
             material: opt_role(material),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -2253,6 +2843,10 @@ pub fn Dialog(
     #[props(default)]
     scrim: Option<Paint>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -2284,7 +2878,8 @@ pub fn Dialog(
     rsx! {
         dialog {
             scrim: opt_paint(scrim),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -2327,6 +2922,10 @@ pub fn Menu(
     #[props(default)]
     scrim: Option<Paint>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -2359,7 +2958,8 @@ pub fn Menu(
     rsx! {
         menu {
             scrim: opt_paint(scrim),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -2406,6 +3006,10 @@ pub fn Menu(
 #[component]
 pub fn Popover(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -2460,7 +3064,8 @@ pub fn Popover(
     };
     rsx! {
         popover {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -2504,6 +3109,10 @@ pub fn Popover(
 #[component]
 pub fn Tabs(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -2540,7 +3149,8 @@ pub fn Tabs(
 ) -> Element {
     rsx! {
         tabs {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -2576,6 +3186,10 @@ pub fn Tabs(
 #[component]
 pub fn TopAppBar(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -2619,7 +3233,8 @@ pub fn TopAppBar(
     rsx! {
         topappbar {
             separator,
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -2659,6 +3274,10 @@ pub fn LazyRow(
     #[props(default)]
     on_scroll_changed: Option<EventHandler<ScrollChange>>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -2694,7 +3313,8 @@ pub fn LazyRow(
     rsx! {
         lazyrow {
             onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -2740,6 +3360,10 @@ pub fn LazyRow(
 #[component]
 pub fn Tooltip(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -2769,7 +3393,8 @@ pub fn Tooltip(
 ) -> Element {
     rsx! {
         tooltip {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -2811,6 +3436,10 @@ pub fn Tooltip(
 #[component]
 pub fn Canvas(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -2839,7 +3468,8 @@ pub fn Canvas(
 ) -> Element {
     rsx! {
         canvas {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -2876,6 +3506,10 @@ pub fn Canvas(
 #[component]
 pub fn Image(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -2908,7 +3542,8 @@ pub fn Image(
 ) -> Element {
     rsx! {
         image {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -2943,6 +3578,10 @@ pub fn Image(
 #[component]
 pub fn Icon(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -2979,7 +3618,8 @@ pub fn Icon(
 ) -> Element {
     rsx! {
         icon {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -3040,6 +3680,10 @@ pub fn NativeView(
     #[props(default)]
     on_focus_change: Option<EventHandler<bool>>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -3070,7 +3714,8 @@ pub fn NativeView(
             handle: handle.0 as i64,
             native_visible: (!visible).then_some(false),
             onnativeviewfocus: optional_listener(on_focus_change, |focused: &bool| *focused),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -3110,6 +3755,10 @@ pub fn NativeView(
 #[component]
 pub fn DatePicker(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -3143,7 +3792,8 @@ pub fn DatePicker(
 ) -> Element {
     rsx! {
         datepicker {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -3183,6 +3833,10 @@ pub fn DatePicker(
 #[component]
 pub fn TimePicker(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -3216,7 +3870,8 @@ pub fn TimePicker(
 ) -> Element {
     rsx! {
         timepicker {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -3261,6 +3916,10 @@ pub fn Dropdown(
     #[props(default)]
     bare: bool,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -3293,7 +3952,8 @@ pub fn Dropdown(
     rsx! {
         dropdown {
             bare: bare.then_some(true),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -3352,6 +4012,10 @@ pub fn Checkbox(
     #[props(default)]
     size: Option<f32>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -3387,7 +4051,8 @@ pub fn Checkbox(
             check_color: opt_paint(check_color),
             outline_color: opt_paint(outline_color),
             control_size: size.map(|side| AttributeValue::any_value((side, side))),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -3438,6 +4103,10 @@ pub fn RadioButton(
     #[props(default)]
     size: Option<f32>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -3471,7 +4140,8 @@ pub fn RadioButton(
             container_color: opt_paint(ring_color),
             check_color: opt_paint(dot_color),
             control_size: size.map(|side| AttributeValue::any_value((side, side))),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -3526,6 +4196,10 @@ pub fn Switch(
     #[props(default)]
     size: Option<(f32, f32)>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -3561,7 +4235,8 @@ pub fn Switch(
             thumb_elevation: opt_dp(thumb_elevation),
             track_border: track_border.map(AttributeValue::any_value),
             control_size: size.map(AttributeValue::any_value),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -3614,6 +4289,10 @@ pub fn Slider(
     #[props(default)]
     thumb_size: Option<f32>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -3658,7 +4337,8 @@ pub fn Slider(
             thumb_color: opt_paint(thumb_color),
             active_track_color: opt_paint(active_track_color),
             thumb_size: opt_dp(thumb_size),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -3701,6 +4381,10 @@ pub fn Slider(
 #[component]
 pub fn ProgressIndicator(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -3731,7 +4415,8 @@ pub fn ProgressIndicator(
 ) -> Element {
     rsx! {
         progressindicator {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -3767,6 +4452,10 @@ pub fn ProgressIndicator(
 #[component]
 pub fn Divider(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -3795,7 +4484,8 @@ pub fn Divider(
 ) -> Element {
     rsx! {
         divider {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -3857,6 +4547,10 @@ pub fn Navigation(
     #[props(default)]
     compact: Option<CompactNavigation>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -3898,7 +4592,8 @@ pub fn Navigation(
             compact_navigation: compact
                 .filter(|compact| *compact != CompactNavigation::Default)
                 .map(|compact| i64::from(u16::from(compact))),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -3949,6 +4644,10 @@ pub fn Navigation(
 #[component]
 pub fn NavigationItem(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -3995,7 +4694,8 @@ pub fn NavigationItem(
 ) -> Element {
     rsx! {
         navigationitem {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -4064,6 +4764,10 @@ pub fn Sheet(
     #[props(default)]
     sheet_handle: Option<bool>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -4105,7 +4809,8 @@ pub fn Sheet(
                     .map(|fraction| fraction.min(1.0)),
             ),
             sheet_handle,
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -4234,6 +4939,10 @@ pub fn LazyGrid(
     #[props(default)]
     on_scroll_changed: Option<EventHandler<ScrollChange>>,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -4275,7 +4984,8 @@ pub fn LazyGrid(
     rsx! {
         lazygrid {
             onscrollchanged: optional_listener(on_scroll_changed, |change: &ScrollChange| *change),
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -4329,6 +5039,10 @@ pub fn LazyGrid(
 #[component]
 pub fn FileDropTarget(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -4366,7 +5080,8 @@ pub fn FileDropTarget(
 ) -> Element {
     rsx! {
         filedroptarget {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -4417,6 +5132,10 @@ pub fn FileDropTarget(
 #[component]
 pub fn Chip(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -4432,7 +5151,8 @@ pub fn Chip(
 ) -> Element {
     rsx! {
         chip {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -4498,6 +5218,10 @@ pub fn FloatingAction(
 #[component]
 pub fn Badge(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -4536,7 +5260,8 @@ pub fn Badge(
 ) -> Element {
     rsx! {
         badge {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -4585,6 +5310,10 @@ pub fn Badge(
 #[component]
 pub fn SelectionContainer(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -4625,14 +5354,53 @@ pub fn SelectionContainer(
     /// own handling.
     #[props(default)]
     on_pointer: EventHandler<PointerEvent>,
+    /// Called when a pointer enters this node. Subscribes to `PointerKinds::ENTER`.
+    #[props(default)]
+    on_pointer_enter: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer leaves this node. Subscribes to `PointerKinds::LEAVE`.
+    #[props(default)]
+    on_pointer_leave: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer moves within this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_pointer_move: Option<EventHandler<PointerEvent>>,
+    /// Called on a long-press pointer down on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_long_press: Option<EventHandler<PointerEvent>>,
+    /// Called on a secondary click or context menu gesture. Subscribes to `PointerKinds::CONTEXT_MENU`.
+    #[props(default)]
+    on_context_menu: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag begins on this node. Subscribes to `PointerKinds::DOWN`.
+    #[props(default)]
+    on_drag_start: Option<EventHandler<PointerEvent>>,
+    /// Called as a pointer moves during a drag on this node. Subscribes to `PointerKinds::MOVE`.
+    #[props(default)]
+    on_drag_move: Option<EventHandler<PointerEvent>>,
+    /// Called when a pointer drag ends or cancels on this node. Subscribes to `PointerKinds::UP | PointerKinds::CANCEL`.
+    #[props(default)]
+    on_drag_end: Option<EventHandler<PointerEvent>>,
+    /// Called on wheel or trackpad scroll over this node. Subscribes to `PointerKinds::WHEEL`.
+    #[props(default)]
+    on_scroll: Option<EventHandler<PointerEvent>>,
 ) -> Element {
+    let pointer_gestures = PointerGestures {
+        on_pointer_enter,
+        on_pointer_leave,
+        on_pointer_move,
+        on_long_press,
+        on_context_menu,
+        on_drag_start,
+        on_drag_move,
+        on_drag_end,
+        on_scroll,
+    };
     rsx! {
         selectioncontainer {
             cursor: opt_role(cursor),
             user_select: opt_role(user_select),
-            pointer_kinds: pointer_kinds.filter(|kinds| *kinds != PointerKinds::NONE).map(|kinds| i64::from(kinds.bits())),
-            onpointer: move |event: dioxus_core::Event<PointerEvent>| on_pointer.call((*event.data()).clone()),
-            weight: opt_dp(weight),
+            pointer_kinds: pointer_gestures.kinds(pointer_kinds),
+            onpointer: move |event: dioxus_core::Event<PointerEvent>| pointer_gestures.dispatch(on_pointer, (*event.data()).clone()),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -4696,6 +5464,10 @@ pub fn SelectionContainer(
 #[component]
 pub fn SplitPane(
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -4753,7 +5525,8 @@ pub fn SplitPane(
 ) -> Element {
     rsx! {
         splitpane {
-            weight: opt_dp(weight),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -4838,6 +5611,14 @@ pub fn CodeEditor(
     /// The space between the gutter and the text, in dp.
     #[props(default)]
     text_inset: Option<f32>,
+    /// The width of the fold column, in dp, while folds or fixed gutter columns are shown.
+    /// Left out, the column is one row wide.
+    #[props(default)]
+    fold_column_width: Option<f32>,
+    /// Whether Tab inserts spaces to the next tab stop (`true`) or a tab character
+    /// (`false`). Left out, it inserts spaces.
+    #[props(default)]
+    insert_spaces: Option<bool>,
     /// The colours of the editor's own parts. A part not named keeps the design system's.
     #[props(default)]
     colors: compose_rust::code::CodeEditorColors,
@@ -4924,7 +5705,16 @@ pub fn CodeEditor(
     /// list. An empty list sends nothing.
     #[props(default)]
     font: compose_rust::fonts::FontRefs,
+    /// The OpenType features the editor's text asks its font for, such as `liga` 0 and
+    /// `calt` 0 to draw `->` as two glyphs. The line numbers keep the design system's.
+    /// Left out, or empty, nothing is sent.
+    #[props(into, default)]
+    font_feature_settings: FontFeatures,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] width: Option<f32>,
     #[props(default)] height: Option<f32>,
     #[props(default)] padding: Option<f32>,
@@ -5009,6 +5799,8 @@ pub fn CodeEditor(
             gutter_min_width_dp: opt_dp(gutter_min_width),
             gutter_padding_dp: opt_dp(gutter_padding),
             text_inset_dp: opt_dp(text_inset),
+            fold_column_width_dp: opt_dp(fold_column_width),
+            insert_spaces,
             code_editor_colors: (!colors.is_empty()).then(|| AttributeValue::any_value(colors)),
             oncodemetrics: optional_listener(on_code_metrics, |metrics: &compose_rust::code::CodeMetrics| *metrics),
             oncodescrolled: optional_listener(on_code_scrolled, |scroll: &compose_rust::code::CodeScroll| *scroll),
@@ -5031,7 +5823,9 @@ pub fn CodeEditor(
             font_size: opt_dp(font_size),
             line_height: opt_dp(line_height),
             font: (!font.is_empty()).then(|| AttributeValue::any_value(font)),
-            weight: opt_dp(weight),
+            font_feature_settings: font_feature_settings.attribute(),
+            weight: opt_dp(weight.filter(|_| weight_fill)),
+            weight_unfilled: opt_dp(weight.filter(|_| !weight_fill)),
             width: opt_dp(width),
             height: opt_dp(height),
             padding: opt_dp(padding),
@@ -5200,6 +5994,10 @@ pub fn Table(
     #[props(default)]
     source: u64,
     #[props(default)] weight: Option<f32>,
+    /// With `false`, `weight` takes up to its share of the room left without stretching a
+    /// shorter child to fill it, as Compose's `weight(w, fill = false)`.
+    #[props(default = true)]
+    weight_fill: bool,
     #[props(default)] fill_max_width: bool,
     #[props(default)] fill_max_height: bool,
 ) -> Element {
@@ -5268,6 +6066,7 @@ pub fn Table(
     rsx! {
         Column {
             weight,
+            weight_fill,
             fill_max_width,
             fill_max_height,
             if sticky_header {

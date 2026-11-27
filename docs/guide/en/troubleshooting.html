@@ -143,10 +143,9 @@ dom.<span class="f">layout</span>(<span class="n">800.0</span>, <span class="n">
         letterboxed, because compose-rust's <code>Image</code> draws a picture whole and centred
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/43">#43</a>).</li>
       <li>A transition or animation that passes through a 3D transform (<code>rotateX</code>,
-        <code>perspective</code>, a <code>matrix3d()</code> that is not flat) is not played: the
-        element takes the transform at once, and a warning on stderr names the element and the
-        motion. The renderer animates 2D transform functions only. A 3D transform that does not
-        move is drawn. <code>transform-style: preserve-3d</code> is drawn flat, each child in its
+        <code>perspective</code>, a <code>matrix3d()</code> that is not flat) is played as 4x4
+        matrices. Between two keyframes whose function lists do not line up, it goes the way
+        matrix interpolation goes, as in a browser. <code>transform-style: preserve-3d</code> is drawn flat, each child in its
         parent's plane, and a warning on stderr names the element
         (<a href="https://github.com/DarkPyonix/dioxus-compose/issues/46">#46</a>).</li>
       <li>A transition or animation that does not move on screen is waiting for compose-rust's

@@ -518,6 +518,30 @@ impl HtmlDom {
         consumed
     }
 
+    /// Double-clicks `node` with the primary button at the centre of its box, sending what a
+    /// renderer reports for two presses: a press and a release with a click count of 1, the
+    /// click, then a press and a release with a click count of 2, which sends `dblclick`,
+    /// and the second click. An `ondoubleclick` handler runs once. Two calls of
+    /// [`HtmlDom::click_node`] send no `dblclick`.
+    ///
+    /// The order is the one a window sees, `mouseup`, `dblclick` and then `click` on the
+    /// second press, so a test runs the handlers as the window does.
+    ///
+    /// Handlers run immediately; call [`HtmlDom::render`] to apply what they changed.
+    pub fn double_click_node(&mut self, node: NodeId) {
+        let (x, y) = self
+            .current
+            .as_ref()
+            .and_then(|list| list.get(node))
+            .map(|entry| (entry.rect.width / 2.0, entry.rect.height / 2.0))
+            .unwrap_or((0.0, 0.0));
+        for count in [1, 2] {
+            self.pointer_event(node, &PointerInput::press(x, y, 1, count));
+            self.pointer_event(node, &PointerInput::release(x, y, 1, count));
+            self.click_node(node);
+        }
+    }
+
     /// Delivers `name` to the handler of `node` itself and no other, and returns whether
     /// it prevented the default.
     fn send_own(&mut self, node: NodeId, name: &'static str, data: &EventData) -> bool {

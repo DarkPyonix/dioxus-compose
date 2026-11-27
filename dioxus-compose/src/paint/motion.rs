@@ -42,10 +42,10 @@ use crate::layout::image::UNRESOLVED_BASE;
 use crate::layout::{convert, local, resolve_styles};
 use crate::paint::display_list::{
     AnimatedProperty, AnimatedValue, Animation, DisplayList, Easing, FillMode, Iterations,
-    Keyframe, NodeEntry, PlayDirection, Rgba, SkippedTransform, StepPosition, Transform2D,
-    TransformFunction, TransitionStart,
+    Keyframe, NodeEntry, PlayDirection, Rgba, StepPosition, Transform2D, Transform3D,
+    TransformFunction, TransformFunction3D, TransitionStart,
 };
-use crate::paint::transform::functions_of;
+use crate::paint::transform::{functions_3d, functions_of};
 
 /// How far past a transition's end the document is resolved to read where it lands, in
 /// seconds. Added to the longest delay plus duration of the transitions found.
@@ -129,6 +129,8 @@ pub(crate) struct Scan {
     /// Nodes whose `transform` a renderer plays, which keep even a plain translation as a
     /// transform.
     pub keep_transform: HashSet<NodeId>,
+    /// Nodes that declare a transition of `transform`.
+    pub transform_transitions: HashSet<NodeId>,
 }
 
 impl Scan {
@@ -169,7 +171,7 @@ pub(crate) struct MotionState {
     pub ticking: bool,
     /// When ticking ends, if it does.
     deadline: Option<f64>,
-    /// Transforms already reported as skipped, so each is reported once.
+    /// What has already been warned about, by node, so each is warned about once.
     pub warned: HashSet<(NodeId, String)>,
 }
 
@@ -215,6 +217,7 @@ impl MotionState {
                         scan.horizon = scan.horizon.max(duration + delay.max(0.0));
                         if property == AnimatedProperty::Transform {
                             scan.keep_transform.insert(id);
+                            scan.transform_transitions.insert(id);
                         }
                     }
                     None => {
@@ -359,9 +362,8 @@ impl MotionState {
 }
 
 /// What the display list asks the motion pass while it places a box.
-pub(crate) struct AnimationRequest<'a> {
+pub(crate) struct AnimationRequest {
     pub node: NodeId,
-    pub tag: &'a str,
     /// The box's size, which a percentage in a transform is a share of.
     pub width: f32,
     pub height: f32,
@@ -369,6 +371,10 @@ pub(crate) struct AnimationRequest<'a> {
     pub font_px: f32,
     /// The box's `transform-origin`.
     pub origin: (f32, f32),
+    /// How far in front of the box's plane its `transform-origin` lies.
+    pub origin_depth: f32,
+    /// The box's `backface-visibility` is `hidden`.
+    pub backface_hidden: bool,
 }
 
 /// The motion pass as the display list builder sees it.
@@ -377,8 +383,15 @@ pub(crate) trait Playback {
     /// position.
     fn keeps_transform(&self, node: NodeId) -> bool;
 
+    /// Whether the node keeps its transform as a 3D one, flat or not: it declares a
+    /// transition of `transform` and was drawn through a 3D transform in the last layout.
+    /// A renderer plays a transition through a 3D transform on the node's 3D transform, so
+    /// the node goes on carrying one, even once it lands on a flat transform, for as long
+    /// as it declares the transition.
+    fn keeps_transform_3d(&self, node: NodeId) -> bool;
+
     /// The `@keyframes` animations a renderer plays on the node that are running now.
-    fn animations(&mut self, request: &AnimationRequest<'_>) -> Vec<Animation>;
+    fn animations(&mut self, request: &AnimationRequest) -> Vec<Animation>;
 }
 
 /// [`Playback`] over a [`Scan`].
@@ -389,7 +402,6 @@ pub(crate) struct Playing<'a> {
     /// starts from or ends at when its `@keyframes` rule does not say.
     pub prior: Option<&'a DisplayList>,
     pub now: f64,
-    pub skipped: Vec<SkippedTransform>,
 }
 
 impl Playback for Playing<'_> {
@@ -397,7 +409,15 @@ impl Playback for Playing<'_> {
         self.scan.keep_transform.contains(&node)
     }
 
-    fn animations(&mut self, request: &AnimationRequest<'_>) -> Vec<Animation> {
+    fn keeps_transform_3d(&self, node: NodeId) -> bool {
+        self.scan.transform_transitions.contains(&node)
+            && self
+                .prior
+                .and_then(|list| list.get(node))
+                .is_some_and(|entry| entry.transform_3d.is_some())
+    }
+
+    fn animations(&mut self, request: &AnimationRequest) -> Vec<Animation> {
         let Some(motion) = self.scan.nodes.get(&request.node) else {
             return Vec::new();
         };
@@ -427,7 +447,9 @@ impl Playback for Playing<'_> {
 
             for property in RENDERER_PROPERTIES {
                 let mut keyframes: Vec<Keyframe> = Vec::new();
-                let mut flat = true;
+                // The 3D form of each transform keyframe, which every keyframe takes when
+                // any one of them is 3D.
+                let mut forms: Vec<Option<Transform3D>> = Vec::new();
                 for (block, (names, values)) in blocks.iter().zip(&evaluated) {
                     if !names.iter().any(|name| name == css_name(property)) {
                         continue;
@@ -435,52 +457,74 @@ impl Playback for Playing<'_> {
                     let Some(values) = values else {
                         continue;
                     };
-                    let value = match property {
+                    let (value, form) = match property {
                         AnimatedProperty::Opacity => {
-                            AnimatedValue::Opacity(values.opacity.clamp(0.0, 1.0))
+                            (AnimatedValue::Opacity(values.opacity.clamp(0.0, 1.0)), None)
                         }
-                        AnimatedProperty::Color => AnimatedValue::Colour(values.color),
+                        AnimatedProperty::Color => (AnimatedValue::Colour(values.color), None),
                         AnimatedProperty::BackgroundColor => {
-                            AnimatedValue::Colour(values.background)
+                            (AnimatedValue::Colour(values.background), None)
                         }
-                        AnimatedProperty::Transform => match &values.functions {
-                            Some(functions) => AnimatedValue::Transform(Transform2D::new(
-                                functions.clone(),
+                        AnimatedProperty::Transform => {
+                            let form = Transform3D::new(
+                                values.functions_3d.clone(),
                                 request.origin,
-                            )),
-                            None => {
-                                self.skipped.push(SkippedTransform {
-                                    node: request.node,
-                                    tag: request.tag.to_string(),
-                                    transform: format!(
-                                        "@keyframes {}: {}",
-                                        spec.name,
-                                        block.declarations.trim()
-                                    ),
-                                });
-                                flat = false;
-                                break;
+                                request.origin_depth,
+                                request.backface_hidden,
+                            );
+                            match &values.functions {
+                                Some(functions) => (
+                                    AnimatedValue::Transform(Transform2D::new(
+                                        functions.clone(),
+                                        request.origin,
+                                    )),
+                                    Some(form),
+                                ),
+                                None => (AnimatedValue::Transform3D(form.clone()), Some(form)),
                             }
-                        },
+                        }
                     };
                     match keyframes.last_mut() {
-                        Some(last) if last.offset == block.offset => last.value = value,
-                        _ => keyframes.push(Keyframe {
-                            offset: block.offset,
-                            value,
-                        }),
+                        Some(last) if last.offset == block.offset => {
+                            last.value = value;
+                            if let Some(slot) = forms.last_mut() {
+                                *slot = form;
+                            }
+                        }
+                        _ => {
+                            keyframes.push(Keyframe {
+                                offset: block.offset,
+                                value,
+                            });
+                            forms.push(form);
+                        }
                     }
                 }
-                if !flat || keyframes.is_empty() {
+                if keyframes.is_empty() {
                     continue;
                 }
                 if keyframes[0].offset > 0.0 {
                     let value = self.implicit(request, property);
+                    forms.insert(0, form_of(&value, request));
                     keyframes.insert(0, Keyframe { offset: 0.0, value });
                 }
                 if keyframes[keyframes.len() - 1].offset < 1.0 {
                     let value = self.implicit(request, property);
+                    forms.push(form_of(&value, request));
                     keyframes.push(Keyframe { offset: 1.0, value });
+                }
+                // A renderer plays a transform as a list of 2D functions or as a 4x4
+                // matrix, never the two in one animation, so one 3D keyframe makes them all
+                // matrices.
+                if keyframes
+                    .iter()
+                    .any(|keyframe| matches!(keyframe.value, AnimatedValue::Transform3D(_)))
+                {
+                    for (keyframe, form) in keyframes.iter_mut().zip(forms) {
+                        if let Some(form) = form {
+                            keyframe.value = AnimatedValue::Transform3D(form);
+                        }
+                    }
                 }
                 let animation = Animation {
                     property,
@@ -513,11 +557,7 @@ impl Playback for Playing<'_> {
 impl Playing<'_> {
     /// The value of `property` a keyframe animation takes where its rule does not say:
     /// the box's value in the last layout, else the property's initial value.
-    fn implicit(
-        &self,
-        request: &AnimationRequest<'_>,
-        property: AnimatedProperty,
-    ) -> AnimatedValue {
+    fn implicit(&self, request: &AnimationRequest, property: AnimatedProperty) -> AnimatedValue {
         let entry = self
             .prior
             .and_then(|list| list.get(request.node).map(|entry| (list, entry)));
@@ -525,11 +565,24 @@ impl Playing<'_> {
             AnimatedProperty::Opacity => {
                 AnimatedValue::Opacity(entry.map_or(1.0, |(list, entry)| list.own_opacity(entry)))
             }
-            AnimatedProperty::Transform => AnimatedValue::Transform(
-                entry
-                    .and_then(|(_, entry)| entry.transform.clone())
-                    .unwrap_or_else(|| Transform2D::identity(request.origin)),
-            ),
+            // The last layout's 3D transform, rebuilt from its functions: its matrix has
+            // the parent's perspective in it already, and the display list puts that in
+            // front of every keyframe of this box.
+            AnimatedProperty::Transform => {
+                match entry.and_then(|(_, entry)| entry.transform_3d.as_ref()) {
+                    Some(three_d) => AnimatedValue::Transform3D(Transform3D::new(
+                        three_d.functions.clone(),
+                        request.origin,
+                        request.origin_depth,
+                        request.backface_hidden,
+                    )),
+                    None => AnimatedValue::Transform(
+                        entry
+                            .and_then(|(_, entry)| entry.transform.clone())
+                            .unwrap_or_else(|| Transform2D::identity(request.origin)),
+                    ),
+                }
+            }
             AnimatedProperty::Color => AnimatedValue::Colour(
                 entry.map_or(Rgba::new(0, 0, 0, 255), |(_, entry)| entry.color),
             ),
@@ -540,6 +593,38 @@ impl Playing<'_> {
             ),
         }
     }
+}
+
+/// The 3D form of a transform keyframe value; `None` for any other property's value.
+fn form_of(value: &AnimatedValue, request: &AnimationRequest) -> Option<Transform3D> {
+    match value {
+        AnimatedValue::Transform3D(transform) => Some(transform.clone()),
+        AnimatedValue::Transform(flat) => Some(Transform3D::from_2d(
+            flat,
+            request.origin_depth,
+            request.backface_hidden,
+        )),
+        AnimatedValue::Opacity(_) | AnimatedValue::Colour(_) => None,
+    }
+}
+
+/// A box's 2D transform, or no transform, as the 3D transform it is, inside the same
+/// context (`transform-origin` depth, parent perspective, backface) as `like`: the other
+/// end of a transition that passes through a 3D transform.
+fn lifted(flat: Option<&Transform2D>, like: &Transform3D) -> Transform3D {
+    let functions: Vec<TransformFunction3D> = flat.map_or_else(Vec::new, |flat| {
+        flat.functions
+            .iter()
+            .map(TransformFunction3D::from_2d)
+            .collect()
+    });
+    Transform3D::wrapped(
+        functions,
+        flat.map_or(like.origin, |flat| flat.origin),
+        like.outer,
+        like.inner,
+        like.backface_hidden,
+    )
 }
 
 /// The value of `property` an entry has, as an animation sees it.
@@ -563,14 +648,14 @@ fn value_of(list: &DisplayList, entry: &NodeEntry, property: AnimatedProperty) -
 /// transition of a property a renderer plays, and whose steady value for it is not what it
 /// was, an animation from the old value to the new.
 ///
-/// A transition of `transform` to or from a 3D transform is not one a renderer plays, so
-/// none is started: the box takes its new transform at once, and the transition is named
-/// in `skipped`.
+/// A transition of `transform` to or from a 3D transform has both its ends as 3D
+/// transforms ([`AnimatedValue::Transform3D`]), the flat or missing one turned into the 3D
+/// transform it is. The box it plays on carries a 3D transform (see
+/// [`Playback::keeps_transform_3d`]).
 pub(crate) fn transitions(
     scan: &Scan,
     prior: Option<&DisplayList>,
     current: &DisplayList,
-    skipped: &mut Vec<SkippedTransform>,
 ) -> Vec<TransitionStart> {
     let Some(prior) = prior else {
         return Vec::new();
@@ -584,31 +669,39 @@ pub(crate) fn transitions(
             continue;
         };
         for spec in &motion.transitions {
-            if spec.property == AnimatedProperty::Transform
+            let (from, to) = if spec.property == AnimatedProperty::Transform
                 && (before.transform_3d.is_some() || entry.transform_3d.is_some())
             {
-                if before.transform_3d != entry.transform_3d || before.transform != entry.transform
+                // The box keeps a 3D transform while it declares this transition, so the
+                // end it lands on is one. Were it not, the renderer would have no 3D
+                // transform to play the matrices on.
+                let Some(to) = entry.transform_3d.clone() else {
+                    continue;
+                };
+                let from = match &before.transform_3d {
+                    Some(from) => from.clone(),
+                    None => lifted(before.transform.as_ref(), &to),
+                };
+                (
+                    AnimatedValue::Transform3D(from),
+                    AnimatedValue::Transform3D(to),
+                )
+            } else {
+                let mut from = value_of(prior, before, spec.property);
+                let mut to = value_of(current, entry, spec.property);
+                // A transform that appears or goes away is a transition to or from the
+                // identity about the other side's origin.
+                if let (AnimatedValue::Transform(a), AnimatedValue::Transform(b)) =
+                    (&mut from, &mut to)
                 {
-                    skipped.push(SkippedTransform {
-                        node: entry.node,
-                        tag: entry.tag.clone(),
-                        transform: "transition: transform".to_string(),
-                    });
+                    match (before.transform.is_some(), entry.transform.is_some()) {
+                        (false, true) => a.origin = b.origin,
+                        (true, false) => b.origin = a.origin,
+                        _ => {}
+                    }
                 }
-                continue;
-            }
-            let mut from = value_of(prior, before, spec.property);
-            let mut to = value_of(current, entry, spec.property);
-            // A transform that appears or goes away is a transition to or from the identity
-            // about the other side's origin.
-            if let (AnimatedValue::Transform(a), AnimatedValue::Transform(b)) = (&mut from, &mut to)
-            {
-                match (before.transform.is_some(), entry.transform.is_some()) {
-                    (false, true) => a.origin = b.origin,
-                    (true, false) => b.origin = a.origin,
-                    _ => {}
-                }
-            }
+                (from, to)
+            };
             if !differ(&from, &to) {
                 continue;
             }
@@ -845,6 +938,9 @@ struct BlockValues {
     background: Rgba,
     /// `None` for a 3D transform.
     functions: Option<Vec<TransformFunction>>,
+    /// The transform's functions in their 3D forms, flat ones included, for an animation
+    /// with a 3D keyframe.
+    functions_3d: Vec<TransformFunction3D>,
 }
 
 /// A document of one element, whose `style` attribute is set to a keyframe's declarations
@@ -937,6 +1033,7 @@ impl ValueProbe {
             color: convert::text_color(style),
             background: convert::resolve_color(&style.clone_background_color(), style),
             functions: functions_of(style, width, height),
+            functions_3d: functions_3d(style, width, height),
         })
     }
 }

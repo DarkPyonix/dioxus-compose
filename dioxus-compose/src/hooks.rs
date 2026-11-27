@@ -618,6 +618,14 @@ pub(crate) enum EditorRequest {
         range: compose_rust::code::CodeRange,
         snippet: String,
     },
+    FormatText {
+        token: u32,
+        format: compose_rust::rich_text::Format,
+    },
+    SetRichText {
+        token: u32,
+        document: compose_rust::rich_text::RichDocument,
+    },
 }
 
 /// The callback a position query waits with, taken out once when the query is written.
@@ -636,7 +644,9 @@ impl EditorRequest {
             | Self::ScrollTo { token, .. }
             | Self::EditGroup { token, .. }
             | Self::SetSelections { token, .. }
-            | Self::InsertSnippet { token, .. } => *token,
+            | Self::InsertSnippet { token, .. }
+            | Self::FormatText { token, .. }
+            | Self::SetRichText { token, .. } => *token,
         }
     }
 }
@@ -873,6 +883,89 @@ impl CodeEditorHandle {
             });
         });
     }
+}
+
+/// A rich text field's formatting, and the way to change it: [`use_rich_text`] makes one
+/// and a `TextField` takes it as its `rich_text`.
+///
+/// The Renderer owns the formatting while the field is edited, so the handle does not hold
+/// the runs. [`format`](Self::format) and [`load`](Self::load) go to the field that carries
+/// the handle with the batch the current call produces, the field drawn in that same call
+/// included; a handle no field carries asks nothing, as a code editor's does. The field's
+/// answers, the formatting at the selection and, after the reader pauses, the document,
+/// are kept here as signals, so a component that reads them draws again when they change.
+#[derive(Clone, Copy, PartialEq)]
+pub struct RichTextHandle {
+    token: u32,
+    format: dioxus_signals::Signal<compose_rust::rich_text::TextFormat>,
+    document: dioxus_signals::Signal<compose_rust::rich_text::RichDocument>,
+}
+
+impl std::fmt::Debug for RichTextHandle {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RichTextHandle")
+            .field("token", &self.token)
+            .finish_non_exhaustive()
+    }
+}
+
+impl RichTextHandle {
+    pub(crate) fn token(self) -> u32 {
+        self.token
+    }
+
+    /// Applies one formatting command to the field's selection: a style on or off, a
+    /// colour, a paragraph role, a list, an indent or a quote.
+    pub fn format(&self, format: compose_rust::rich_text::Format) {
+        EDITS.with_borrow_mut(|edits| {
+            edits.push(EditorRequest::FormatText {
+                token: self.token,
+                format,
+            });
+        });
+    }
+
+    /// Replaces the field's whole document, its text and its formatting.
+    pub fn load(&self, document: compose_rust::rich_text::RichDocument) {
+        EDITS.with_borrow_mut(|edits| {
+            edits.push(EditorRequest::SetRichText {
+                token: self.token,
+                document,
+            });
+        });
+    }
+
+    /// The formatting at the selection the field last reported: what a format sheet shows.
+    /// Before any report, a caret in an ordinary body paragraph.
+    pub fn format_at_selection(&self) -> compose_rust::rich_text::TextFormat {
+        dioxus_signals::ReadableExt::cloned(&self.format)
+    }
+
+    /// The document the field last reported. Before any report, an empty one.
+    pub fn document(&self) -> compose_rust::rich_text::RichDocument {
+        dioxus_signals::ReadableExt::cloned(&self.document)
+    }
+
+    /// Keeps the formatting the field reported.
+    pub(crate) fn heard_format(&self, format: compose_rust::rich_text::TextFormat) {
+        let mut signal = self.format;
+        dioxus_signals::WritableExt::set(&mut signal, format);
+    }
+
+    /// Keeps the document the field reported.
+    pub(crate) fn heard_document(&self, document: compose_rust::rich_text::RichDocument) {
+        let mut signal = self.document;
+        dioxus_signals::WritableExt::set(&mut signal, document);
+    }
+}
+
+/// A rich text handle for the field this component draws, the same one on every render.
+pub fn use_rich_text() -> RichTextHandle {
+    dioxus_core::use_hook(|| RichTextHandle {
+        token: CodeEditorHandle::new().token(),
+        format: dioxus_signals::Signal::new(compose_rust::rich_text::TextFormat::default()),
+        document: dioxus_signals::Signal::new(compose_rust::rich_text::RichDocument::default()),
+    })
 }
 
 /// A handle to the editor this component draws, the same one on every render.

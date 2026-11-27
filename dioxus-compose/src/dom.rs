@@ -15,6 +15,7 @@ mod writer;
 
 use std::any::Any;
 use std::cell::RefCell;
+use std::collections::HashMap;
 use std::future::Future;
 use std::pin::{Pin, pin};
 use std::rc::Rc;
@@ -55,7 +56,6 @@ use crate::paint::bridge::ClickTargets;
 use crate::paint::build::build_display_list;
 use crate::paint::display_list::{
     AnimatedProperty, DisplayList, DisplayListDiff, FlattenedSpace, InputKind, Rect, Sides,
-    SkippedTransform,
 };
 use crate::paint::motion::{
     MotionState, Playing, SETTLE_MARGIN, Scan, rewrite_reduced_motion, transitions,
@@ -756,6 +756,13 @@ impl HtmlDom {
         } else {
             0
         };
+        let scroll_offsets: HashMap<NodeId, (f32, f32)> = self
+            .scrolls
+            .borrow()
+            .reported
+            .iter()
+            .map(|(&id, pos)| (id, (pos.x as f32, pos.y as f32)))
+            .collect();
         let texts = &self.layout_state.texts;
         let list = if described {
             self.motion.begin_frame();
@@ -764,21 +771,23 @@ impl HtmlDom {
                 state: &mut self.motion,
                 prior: self.current.as_ref(),
                 now,
-                skipped: Vec::new(),
             };
-            let mut list = build_display_list(&self.doc, texts, &mut lookup, Some(&mut playing));
-            list.skipped_transforms.append(&mut playing.skipped);
+            let mut list = build_display_list(
+                &self.doc,
+                texts,
+                &mut lookup,
+                Some(&mut playing),
+                &scroll_offsets,
+            );
             // After the last use of `playing`, which holds the motion state mutably.
             apply_appearance(&mut list, |node| self.appearance_is_none(node));
             if animating {
-                let mut skipped = Vec::new();
-                list.transitions = transitions(&scan, self.current.as_ref(), &list, &mut skipped);
-                list.skipped_transforms.append(&mut skipped);
+                list.transitions = transitions(&scan, self.current.as_ref(), &list);
             }
             self.motion.end_frame();
             list
         } else {
-            let mut list = build_display_list(&self.doc, texts, &mut lookup, None);
+            let mut list = build_display_list(&self.doc, texts, &mut lookup, None, &scroll_offsets);
             apply_appearance(&mut list, |node| self.appearance_is_none(node));
             list
         };
@@ -835,27 +844,10 @@ impl HtmlDom {
         *self.resize.collect_buffer() = pending;
     }
 
-    /// Says on stderr, once for each, which element's motion through a 3D transform is not
-    /// played, and which element's `transform-style: preserve-3d` is drawn flat. The
-    /// display list carries them all in
-    /// [`skipped_transforms`](DisplayList::skipped_transforms) and
+    /// Says on stderr, once for each, which element's `transform-style: preserve-3d` is
+    /// drawn flat. The display list carries them all in
     /// [`flattened_spaces`](DisplayList::flattened_spaces).
     fn report_skipped(&mut self, list: &DisplayList) {
-        for SkippedTransform {
-            node,
-            tag,
-            transform,
-        } in &list.skipped_transforms
-        {
-            if self.motion.warned.insert((*node, transform.clone())) {
-                eprintln!(
-                    "dioxus-compose: <{tag}> (node {node}) animates a 3D transform \
-                     (`{transform}`). The renderer animates 2D transform functions only, so \
-                     this motion is not played and the element is drawn with the transform \
-                     it rests at."
-                );
-            }
-        }
         for FlattenedSpace { node, tag } in &list.flattened_spaces {
             if self
                 .motion
@@ -975,7 +967,19 @@ impl HtmlDom {
 
     /// The topmost node at a point of the last layout, in document coordinates.
     pub fn hit_test(&self, x: f32, y: f32) -> Option<NodeId> {
-        self.current.as_ref()?.hit_test(x, y)
+        let list = self.current.as_ref()?;
+        let scrolls = self.scrolls.borrow();
+        if scrolls.reported.is_empty() {
+            list.hit_test(x, y)
+        } else {
+            list.hit_test_scrolled(x, y, |id| {
+                scrolls
+                    .reported
+                    .get(&id)
+                    .map(|pos| (pos.x as f32, pos.y as f32))
+                    .unwrap_or((0.0, 0.0))
+            })
+        }
     }
 
     /// The node an `event` at `node` is delivered to: `node` itself or its nearest
@@ -1407,7 +1411,14 @@ impl HtmlDom {
     /// `get_scroll_size`, and sends `scroll` to the element's own handler. Like a
     /// browser's `scroll` on an element, it does not bubble.
     pub fn scroll_changed(&mut self, node: NodeId, position: ScrollPosition) {
-        self.scrolls.borrow_mut().reported.insert(node, position);
+        let previous = self.scrolls.borrow_mut().reported.insert(node, position);
+        if previous != Some(position)
+            && self.layout_state.positions.values().any(|&pos| {
+                pos == style::properties::generated::longhands::position::computed_value::T::Sticky
+            })
+        {
+            self.state.dirty = true;
+        }
         if self.state.listeners(node).contains(&"scroll")
             && let Some(element) = self.state.element_of(node)
         {

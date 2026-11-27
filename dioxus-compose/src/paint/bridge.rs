@@ -36,7 +36,7 @@ use compose_rust::schema::{
 use compose_rust::spans::{TextSpan, TextSpans};
 
 use crate::html::NodeId;
-use crate::layout::measure::{TextLineHeight, TextStyle};
+use crate::layout::measure::{SpanRun, TextLineHeight, TextStyle};
 use crate::layout::renderer_measure::{SpanBase, font_refs, wire_spans};
 use crate::paint::animate;
 use crate::paint::display_list::{
@@ -192,8 +192,13 @@ pub enum BridgeEvent {
     /// The user pressed a key in a box whose element listens for keys, or in something
     /// inside it that has the focus.
     KeyDown,
+    /// The user released a key in a box whose element listens for keys, or in something
+    /// inside it that has the focus.
+    KeyUp,
     /// The user pressed a key in an `<input>` or `<textarea>`.
     FieldKeyDown,
+    /// The user released a key in an `<input>` or `<textarea>`.
+    FieldKeyUp,
     /// An IME composition changed in an `<input>` or `<textarea>`.
     CompositionChange,
     /// The user ticked or cleared a checkbox, or picked a radio button.
@@ -292,9 +297,13 @@ struct Placed {
     handlers: Vec<u64>,
     /// The click handler, and the DOM node it is for.
     click: Option<(u64, NodeId)>,
-    /// The key handler of a box whose element listens for keys, and that element. A
-    /// field's key handler is set once, with its other handlers, and is not this.
+    /// Per-span click handlers on a text node, each with the DOM node it targets.
+    span_clicks: Vec<(u64, NodeId)>,
+    /// The key-down handler of a box whose element listens for keys, and that element. A
+    /// field's key handlers are set once, with its other handlers, and are not these.
     keys: Option<(u64, NodeId)>,
+    /// The key-up handler of a box whose element listens for keys, and that element.
+    key_up: Option<(u64, NodeId)>,
     /// The pointer subscription as sent: the handler, the DOM node, the kinds taken, the
     /// cursor and the user-select values.
     pointer: Option<PointerSent>,
@@ -740,7 +749,7 @@ impl PlanBridge {
                     }
                 }
                 PlanChange::KindChanged { key, kind } => {
-                    self.set_kind(batch, key, &kind, false, None)
+                    self.set_kind(batch, key, &kind, false, None, clicks)
                 }
                 PlanChange::ModifierSet { key, .. } | PlanChange::ModifierRemoved { key, .. } => {
                     dirty.insert(key);
@@ -757,13 +766,27 @@ impl PlanBridge {
         // A handler added to or taken off a box changes nothing in the plan, and the page's
         // size follows the window.
         let nodes = plan.nodes();
+        let mut span_dirty: Vec<PlanKey> = Vec::new();
         for node in &nodes {
-            if let Some(placed) = self.nodes.get(&node.key)
-                && (placed.click.map(|(_, target)| target) != click_target(node, clicks)
+            if let Some(placed) = self.nodes.get(&node.key) {
+                if placed.click.map(|(_, target)| target) != click_target(node, clicks)
                     || placed.keys.map(|(_, target)| target) != key_target(node, clicks)
-                    || semantics_changed(placed, node, clicks))
-            {
-                dirty.insert(node.key);
+                    || semantics_changed(placed, node, clicks)
+                {
+                    dirty.insert(node.key);
+                }
+                if span_clicks_changed(placed, node, clicks) {
+                    span_dirty.push(node.key);
+                }
+            }
+        }
+        if !span_dirty.is_empty() {
+            for node in &nodes {
+                if span_dirty.contains(&node.key)
+                    && let PlanKind::Text(text) = &node.kind
+                {
+                    self.sync_text_spans(batch, node.key, text, clicks);
+                }
             }
         }
         if let Some(placed) = self.nodes.get(&PlanKey::Page)
@@ -1019,7 +1042,7 @@ impl PlanBridge {
         batch.write(Mutation::ControlAnimation {
             node_id,
             animation_id: running.id,
-            property: animate::wire_property(running.property),
+            property: animate::wire_property_of(&running.animation),
             slot: running.slot,
             op,
             at_time_nanos: 0,
@@ -1161,7 +1184,9 @@ impl PlanBridge {
                 extras: Vec::new(),
                 handlers: Vec::new(),
                 click: None,
+                span_clicks: Vec::new(),
                 keys: None,
+                key_up: None,
                 pointer: None,
                 shown: String::new(),
                 active_descendant: None,
@@ -1195,7 +1220,7 @@ impl PlanBridge {
             }
             _ => None,
         };
-        self.set_kind(batch, node.key, &node.kind, true, inherited_color);
+        self.set_kind(batch, node.key, &node.kind, true, inherited_color, clicks);
         self.decorate(batch, node, clicks);
         for child in &node.children {
             let child_id = self.build(batch, child, Some(node.key), next_inherited, clicks);
@@ -1510,6 +1535,7 @@ impl PlanBridge {
         kind: &PlanKind,
         created: bool,
         inherited_color: Option<Rgba>,
+        clicks: &dyn ClickTargets,
     ) {
         let Some(placed) = self.nodes.get(&key) else {
             return;
@@ -1535,9 +1561,7 @@ impl PlanBridge {
                 let color = (inherited_color != Some(text.color)).then_some(text.color);
                 self.set_text_style(batch, key, &text.style, color);
                 self.set_prop(batch, key, PropertyKind::Font, font_prop(&text.style));
-                let (spans, span_fonts) = text_spans(text);
-                self.set_prop(batch, key, PropertyKind::Spans, spans);
-                self.set_prop(batch, key, PropertyKind::SpanFonts, span_fonts);
+                self.sync_text_spans(batch, key, text, clicks);
                 self.set_prop(
                     batch,
                     key,
@@ -1648,10 +1672,9 @@ impl PlanBridge {
             if !field.multiline {
                 self.add_handler(batch, key, PropertyKind::OnSubmit, BridgeEvent::TextSubmit);
             }
-            // Keys pressed in a field go to the page whether or not anything listens yet:
-            // the renderer asks before Enter submits or starts a line, and the answer
-            // depends on handlers that may be added later.
-            // TODO(DarkPyonix/compose-rust#100): extend OnKeyDown beyond Enter to general key events.
+            // Keys pressed or released in a field go to the page whether or not anything
+            // listens yet: the renderer asks before Enter submits or starts a line, and the
+            // answer depends on handlers that may be added later.
             self.add_handler(
                 batch,
                 key,
@@ -1664,6 +1687,7 @@ impl PlanBridge {
                 PropertyKind::OnKeyDown,
                 BridgeEvent::FieldKeyDown,
             );
+            self.add_handler(batch, key, PropertyKind::OnKeyUp, BridgeEvent::FieldKeyUp);
         } else if let Some(placed) = self.nodes.get_mut(&key) {
             // The renderer owns the text while the user edits it. The Host's value goes out
             // only when the app set a new one, and not when it is what the field already
@@ -1831,6 +1855,74 @@ impl PlanBridge {
         }
     }
 
+    /// Brings a text node's spans, span fonts, and per-span click handlers up to date.
+    fn sync_text_spans(
+        &mut self,
+        batch: &mut Batch,
+        key: PlanKey,
+        text: &PlanText,
+        clicks: &dyn ClickTargets,
+    ) {
+        let container = key.node();
+        let mut wanted: Vec<NodeId> = Vec::new();
+        for run in &text.spans {
+            if let Some(owner) = run.owner
+                && let Some(container) = container
+                && let Some(target) = clicks.run_target(owner, container)
+                && !wanted.contains(&target)
+            {
+                wanted.push(target);
+            }
+        }
+        let span_handlers: Vec<(NodeId, u64)> = {
+            let Some(placed) = self.nodes.get_mut(&key) else {
+                return;
+            };
+            let mut kept = Vec::with_capacity(wanted.len());
+            for &(handler_id, target) in &placed.span_clicks {
+                if wanted.contains(&target) {
+                    kept.push((handler_id, target));
+                } else {
+                    placed.handlers.retain(|handler| *handler != handler_id);
+                    self.handlers.remove(&handler_id);
+                }
+            }
+            for target in &wanted {
+                if !kept.iter().any(|&(_, existing)| existing == *target) {
+                    let handler_id = self.next_handler_id;
+                    self.next_handler_id += 1;
+                    placed.handlers.push(handler_id);
+                    kept.push((handler_id, *target));
+                    self.handlers.insert(
+                        handler_id,
+                        BridgeHandler {
+                            node_id: placed.id,
+                            node: *target,
+                            event: BridgeEvent::Click,
+                        },
+                    );
+                }
+            }
+            placed.span_clicks = kept;
+            placed
+                .span_clicks
+                .iter()
+                .map(|&(handler_id, target)| (target, handler_id))
+                .collect()
+        };
+        let (spans, span_fonts) = text_spans(text, &mut |run| {
+            let owner = run.owner?;
+            let container = container?;
+            let target = clicks.run_target(owner, container)?;
+            span_handlers
+                .iter()
+                .find(|&&(t, _)| t == target)
+                .map(|&(_, handler_id)| handler_id)
+        });
+        self.set_prop(batch, key, PropertyKind::Spans, spans);
+        self.set_prop(batch, key, PropertyKind::SpanFonts, span_fonts);
+    }
+
     /// Brings a node's modifiers and background layers up to date with the plan.
     fn decorate(&mut self, batch: &mut Batch, node: &PlanNode, clicks: &dyn ClickTargets) {
         let key = node.key;
@@ -1872,28 +1964,52 @@ impl PlanBridge {
                 placed.handlers.retain(|handler| *handler != handler_id);
                 self.handlers.remove(&handler_id);
             }
-            let value = match keys {
+            if let Some((handler_id, _)) = placed.key_up.take() {
+                placed.handlers.retain(|handler| *handler != handler_id);
+                self.handlers.remove(&handler_id);
+            }
+            let (down_value, up_value) = match keys {
                 Some(target) => {
-                    let handler_id = self.next_handler_id;
+                    let down_id = self.next_handler_id;
                     self.next_handler_id += 1;
-                    placed.handlers.push(handler_id);
-                    placed.keys = Some((handler_id, target));
+                    placed.handlers.push(down_id);
+                    placed.keys = Some((down_id, target));
                     self.handlers.insert(
-                        handler_id,
+                        down_id,
                         BridgeHandler {
                             node_id: placed.id,
                             node: target,
                             event: BridgeEvent::KeyDown,
                         },
                     );
-                    PropertyValue::Integer(handler_id as i64)
+                    let up_id = self.next_handler_id;
+                    self.next_handler_id += 1;
+                    placed.handlers.push(up_id);
+                    placed.key_up = Some((up_id, target));
+                    self.handlers.insert(
+                        up_id,
+                        BridgeHandler {
+                            node_id: placed.id,
+                            node: target,
+                            event: BridgeEvent::KeyUp,
+                        },
+                    );
+                    (
+                        PropertyValue::Integer(down_id as i64),
+                        PropertyValue::Integer(up_id as i64),
+                    )
                 }
-                None => PropertyValue::None,
+                None => (PropertyValue::None, PropertyValue::None),
             };
             batch.write(Mutation::SetProp {
                 node_id: placed.id,
                 property: PropertyKind::OnKeyDown,
-                value,
+                value: down_value,
+            });
+            batch.write(Mutation::SetProp {
+                node_id: placed.id,
+                property: PropertyKind::OnKeyUp,
+                value: up_value,
             });
         }
 
@@ -2107,6 +2223,31 @@ const EPSILON: f32 = 0.01;
 
 fn close(a: f32, b: f32) -> bool {
     (a - b).abs() < EPSILON
+}
+
+/// Whether the per-span click targets of a text node changed since it was last synced.
+fn span_clicks_changed(placed: &Placed, node: &PlanNode, clicks: &dyn ClickTargets) -> bool {
+    let PlanKind::Text(text) = &node.kind else {
+        return false;
+    };
+    let Some(container) = node.key.node() else {
+        return false;
+    };
+    let mut wanted: Vec<NodeId> = Vec::new();
+    for run in &text.spans {
+        if let Some(owner) = run.owner
+            && let Some(target) = clicks.run_target(owner, container)
+            && !wanted.contains(&target)
+        {
+            wanted.push(target);
+        }
+    }
+    let current: Vec<NodeId> = placed
+        .span_clicks
+        .iter()
+        .map(|&(_, target)| target)
+        .collect();
+    wanted != current
 }
 
 /// The DOM node a click on a plan node is for, if a click there does anything.
@@ -2469,6 +2610,7 @@ fn transform_origin(animation: &CssAnimation) -> Option<(f32, f32)> {
         .iter()
         .find_map(|keyframe| match &keyframe.value {
             AnimatedValue::Transform(transform) => Some(transform.origin),
+            AnimatedValue::Transform3D(transform) => Some(transform.origin),
             _ => None,
         })
 }
@@ -2559,7 +2701,7 @@ fn font_prop(style: &TextStyle) -> Prop {
 /// the font table for the runs that name a family: the renderer measures and draws the
 /// text, bold phrase and link included, as one. A run without spans sends the slant and
 /// lines of the whole text, if it has any, and no font table.
-fn text_spans(text: &PlanText) -> (Prop, Prop) {
+fn text_spans(text: &PlanText, on_click: &mut dyn FnMut(&SpanRun) -> Option<u64>) -> (Prop, Prop) {
     if text.spans.is_empty() {
         return (slant_and_lines(text), Prop::None);
     }
@@ -2568,9 +2710,13 @@ fn text_spans(text: &PlanText) -> (Prop, Prop) {
         underline: text.decoration.underline,
         line_through: text.decoration.line_through,
     };
-    let spans = wire_spans(text.text.len(), base, &text.spans, &mut |colour| {
-        Some(literal(colour))
-    });
+    let spans = wire_spans(
+        text.text.len(),
+        base,
+        &text.spans,
+        &mut |colour| Some(literal(colour)),
+        on_click,
+    );
     let fonts = if spans.font_entry_count() > 0 {
         Prop::SpanFonts(spans.clone())
     } else {
