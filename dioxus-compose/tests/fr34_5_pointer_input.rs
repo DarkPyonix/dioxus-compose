@@ -91,6 +91,11 @@ fn page() -> Element {
                 e.prevent_default();
             },
         }
+        div { id: "twice",
+            style: "position: absolute; left: 100px; top: 200px; width: 50px; height: 50px",
+            onclick: move |_| log("click"),
+            ondoubleclick: move |_| log("dblclick"),
+        }
         div { id: "tree", style: "cursor: pointer; user-select: none",
             div { id: "leaf" }
         }
@@ -200,6 +205,26 @@ fn fr34_5_dblclick_reaches_handler() {
     dom.pointer_event(node, &PointerInput::press(5.0, 5.0, 1, 2));
     dom.pointer_event(node, &PointerInput::release(5.0, 5.0, 1, 2));
     assert_eq!(take_log(), ["dblclick"]);
+}
+
+/// The helper sends a double click in the order a window reports it, so a handler bound
+/// only to `ondoubleclick` runs once, after the first click and before the second.
+#[test]
+fn fr34_5_double_click_node_runs_dblclick_once() {
+    let mut dom = dom();
+    let node = dom.element_by_id("twice").unwrap();
+    dom.double_click_node(node);
+    assert_eq!(take_log(), ["click", "dblclick", "click"]);
+}
+
+/// Two single clicks are not a double click.
+#[test]
+fn fr34_5_two_single_clicks_do_not_fire_dblclick() {
+    let mut dom = dom();
+    let node = dom.element_by_id("twice").unwrap();
+    dom.click_node(node);
+    dom.click_node(node);
+    assert_eq!(take_log(), ["click", "click"]);
 }
 
 #[test]
