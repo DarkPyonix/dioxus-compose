@@ -303,6 +303,11 @@ pub struct HtmlDom {
     cached_plan: Option<(u64, Plan)>,
     /// Focus requests queued from `MountedData::set_focus`.
     focus_requests: Rc<RefCell<Vec<(NodeId, bool)>>>,
+    /// `showModal()` (true) and `close()` (false) calls queued from [`DialogElement`].
+    dialog_requests: Rc<RefCell<Vec<(NodeId, bool)>>>,
+    /// The `<dialog>` elements opened with `showModal()` and not closed since. One is modal
+    /// while it also still has its `open` attribute.
+    modal_dialogs: std::collections::HashSet<NodeId>,
     /// Shared snapshot of node client rectangles for `MountedData::get_client_rect`.
     mounted_rects: Rc<RefCell<std::collections::HashMap<NodeId, Rect>>>,
     /// The scroll moves `MountedData` asked for, and the positions it reads back.
@@ -411,6 +416,8 @@ impl HtmlDom {
             layout_revision: 0,
             cached_plan: None,
             focus_requests: Rc::default(),
+            dialog_requests: Rc::default(),
+            modal_dialogs: std::collections::HashSet::new(),
             mounted_rects: Rc::default(),
             scrolls: Rc::default(),
             resize: resize::ResizeObservers::default(),
@@ -443,6 +450,10 @@ impl HtmlDom {
             self.focus_requests
                 .borrow_mut()
                 .retain(|(id, _)| !removed.contains(id));
+            self.dialog_requests
+                .borrow_mut()
+                .retain(|(id, _)| !removed.contains(id));
+            self.modal_dialogs.retain(|id| !removed.contains(id));
             self.scrolls
                 .borrow_mut()
                 .reported
@@ -471,7 +482,10 @@ impl HtmlDom {
             self.focus(node);
         }
         let mounts = std::mem::take(&mut self.state.pending_mounts);
-        if mounts.is_empty() && self.focus_requests.borrow().is_empty() {
+        if mounts.is_empty()
+            && self.focus_requests.borrow().is_empty()
+            && self.dialog_requests.borrow().is_empty()
+        {
             return;
         }
         for node in mounts {
@@ -484,6 +498,7 @@ impl HtmlDom {
                 let backing = MountedElement {
                     node,
                     focus_requests: self.focus_requests.clone(),
+                    dialog_requests: self.dialog_requests.clone(),
                     rects: self.mounted_rects.clone(),
                     scrolls: self.scrolls.clone(),
                 };
@@ -511,6 +526,53 @@ impl HtmlDom {
                 self.blur(node);
             }
         }
+
+        let requests = std::mem::take(&mut *self.dialog_requests.borrow_mut());
+        for (node, show) in requests {
+            if !is_connected(&self.doc, node) {
+                continue;
+            }
+            if show {
+                self.show_modal(node);
+            } else {
+                self.close_dialog(node);
+            }
+        }
+    }
+
+    /// `showModal()` on the `<dialog>` element `node`: opens it, as its `open` attribute, and
+    /// makes it a modal, so that while it stays open the accessibility tree holds only what
+    /// is inside it. A dialog opened by its `open` attribute alone is not modal. Any other
+    /// element is left alone.
+    pub fn show_modal(&mut self, node: NodeId) {
+        if !self.is_dialog(node) {
+            return;
+        }
+        self.doc
+            .mutate()
+            .set_attribute(node, attribute_name("open", None), "");
+        self.modal_dialogs.insert(node);
+        self.state.mark_style_dirty(node);
+    }
+
+    /// `close()` on the `<dialog>` element `node`: takes its `open` attribute away and it is
+    /// no longer modal. Any other element is left alone.
+    pub fn close_dialog(&mut self, node: NodeId) {
+        if !self.is_dialog(node) {
+            return;
+        }
+        self.doc
+            .mutate()
+            .clear_attribute(node, attribute_name("open", None));
+        self.modal_dialogs.remove(&node);
+        self.state.mark_style_dirty(node);
+    }
+
+    fn is_dialog(&self, node: NodeId) -> bool {
+        self.doc
+            .get_node(node)
+            .and_then(|node| node.data.downcast_element())
+            .is_some_and(|element| element.name.local.as_ref().eq_ignore_ascii_case("dialog"))
     }
 
     /// Monotonic counter incremented whenever [`HtmlDom::layout`] recomputes the display list.
@@ -2111,8 +2173,42 @@ impl HasClipboardData for ClipboardEventData {
 struct MountedElement {
     node: NodeId,
     focus_requests: Rc<RefCell<Vec<(NodeId, bool)>>>,
+    dialog_requests: Rc<RefCell<Vec<(NodeId, bool)>>>,
     rects: Rc<RefCell<std::collections::HashMap<NodeId, Rect>>>,
     scrolls: Rc<RefCell<scroll::Scrolls>>,
+}
+
+/// `showModal()` and `close()` of a `<dialog>`, on the element an `onmounted` handler was
+/// given. Dioxus's `MountedData` has no such methods, and a page drawn here runs no
+/// script, so this is how one opens a dialog as a modal. Both take effect when the
+/// handler that called them returns. On an element that is not a `<dialog>`, and on a
+/// `MountedData` that did not come from an HTML page drawn here, they do nothing.
+pub trait DialogElement {
+    /// Opens the dialog as a modal: it gets its `open` attribute, and while it keeps it,
+    /// nothing outside it is in the accessibility tree.
+    fn show_modal(&self);
+    /// Closes the dialog: its `open` attribute goes, and it is no longer modal.
+    fn close(&self);
+}
+
+impl DialogElement for MountedData {
+    fn show_modal(&self) {
+        if let Some(element) = self.downcast::<MountedElement>() {
+            element
+                .dialog_requests
+                .borrow_mut()
+                .push((element.node, true));
+        }
+    }
+
+    fn close(&self) {
+        if let Some(element) = self.downcast::<MountedElement>() {
+            element
+                .dialog_requests
+                .borrow_mut()
+                .push((element.node, false));
+        }
+    }
 }
 
 impl RenderedElementBacking for MountedElement {
