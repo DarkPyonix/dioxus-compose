@@ -734,6 +734,7 @@ tag 16, 24바이트: node_id: u32, handler_id: u64, value: f64
 - `DatePicker`가 세 시스템에서 **서로 다른 고르기 방식**으로 나타납니다. 같은 모양을 세 번 그린 것이면 실패입니다.
 - 위젯을 추가해도 `DesignSystem` enum과 규칙 테이블 외에는 바뀌지 않습니다(FR-14.2 회귀 검사).
 - 각 위젯에 프로토콜 왕복 테스트가 있습니다(PR-4 벡터).
+- [리더, 2026-11-27] **compose-rust 8a5c5f11의 새 어휘.** 모든 위젯의 `weight_fill: false`는 `weight`와 함께 `Weight` 대신 `WeightUnfilled`(Compose `weight(w, fill = false)`)를 보낸다(`weight_unfilled` 속성, 같은 수정자 자리). `CodeEditor`는 `fold_column_width`(dp, `FoldColumnWidthDp` 226)와 `insert_spaces`(`InsertSpaces` 227)를 받는다. `TextField`의 `rich_text`는 `use_rich_text()`가 주는 `RichTextHandle`을 받아 `RichText`(220)를 켜고 핸들을 그 필드에 붙인다. `handle.format(Format)`은 `FormatText`를, `handle.load(RichDocument)`는 `SetRichText`를 그 필드로 보내고, 같은 호출에서 그 필드가 만들어졌으면 그 배치로 나간다. 어느 필드도 들지 않은 핸들의 명령은 `CodeEditorHandle`처럼 버린다. `on_text_format`(`TextFormat`, `OnTextFormat` 221)과 `on_rich_text_change`(`RichDocument`, `OnRichTextChanged` 222)가 렌더러의 답을 받고, `handle.format_at_selection()`과 `handle.document()`는 마지막 답을 읽는다. 테스트 `fr15_weight_fill_false_sends_weight_unfilled`, `fr15_rich_text_field_sends_rich_text_and_its_handlers`, `fr15_rich_text_handle_sends_format_and_load`, `fr15_rich_text_events_reach_their_handlers`, 그리고 `rsx_surface`의 기대 표.
 
 #### 15.5.1 `use_hover` (`Draft`)
 
