@@ -18,7 +18,8 @@ use dioxus_compose::protocol::{HostEvent, Mutation, PropertyValue, decode_batch}
 use dioxus_compose::schema::{
     AnimatedProperty, AnimationControl, AnimationEventKind, AnimationEvents, Color,
     ColorInterpolation, EventPayload, FillMode, KeyframeValue, Modifier, Paint, PlayState,
-    PlaybackDirection, PropertyKind, ReducedMotion, Timing, TransformFunctionKind, WidgetKind,
+    PlaybackDirection, PropertyKind, ReducedMotion, StepPosition, Timing, TransformFunctionKind,
+    WidgetKind,
 };
 use dioxus_core::Attribute;
 use dioxus_elements::{AnimationEvent, TransitionEvent};
@@ -1005,4 +1006,343 @@ fn fr34_2_runtime_reduced_motion_event_updates_prefers_reduced_motion_rules() {
     );
     assert_eq!(restarted[0].node_id, spin.node_id);
     assert_eq!(restarted[0].property, AnimatedProperty::Transform);
+}
+
+// Motion through a 3D transform: 4x4 matrices, column-major (`m[4 * column + row]`), each
+// keyframe's transform without its origin, which the node's `Transform3D` carries.
+
+const THROUGH_3D_CSS: &str = r#"
+html, body { margin: 0; padding: 0; }
+#flip { width: 100px; height: 50px; transition: transform 1s linear; }
+#flip.on { transform: rotateY(90deg); }
+@keyframes tilt { from { transform: rotateX(0deg); } to { transform: rotateX(90deg); } }
+#tilt { width: 40px; height: 40px; animation: tilt 1s linear infinite; }
+@keyframes tumble { from { transform: rotateX(0deg); } to { transform: rotateX(360deg); } }
+#tumble { width: 40px; height: 40px; animation: tumble 3s linear infinite; }
+@keyframes swing { from { transform: rotateX(0deg); } to { transform: rotateX(270deg); } }
+#swing { width: 40px; height: 40px; animation: swing 2s ease-in-out infinite; }
+#stair { width: 40px; height: 40px; animation: tumble 4s steps(4) infinite; }
+"#;
+
+fn through_3d_config() -> HtmlConfig {
+    HtmlConfig {
+        stylesheets: vec![THROUGH_3D_CSS.to_string()],
+        measurer: Some(Box::new(FixedAdvance)),
+        ..HtmlConfig::default()
+    }
+}
+
+const IDENTITY: [f32; 16] = [
+    1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0,
+];
+
+/// `rotateX(degrees)`: y goes to `(0, cos, sin)` and z to `(0, -sin, cos)`.
+fn rotate_x(degrees: f32) -> [f32; 16] {
+    let (sin, cos) = degrees.to_radians().sin_cos();
+    [
+        1.0, 0.0, 0.0, 0.0, 0.0, cos, sin, 0.0, 0.0, -sin, cos, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ]
+}
+
+/// `rotateY(degrees)`: x goes to `(cos, 0, -sin)` and z to `(sin, 0, cos)`.
+fn rotate_y(degrees: f32) -> [f32; 16] {
+    let (sin, cos) = degrees.to_radians().sin_cos();
+    [
+        cos, 0.0, -sin, 0.0, 0.0, 1.0, 0.0, 0.0, sin, 0.0, cos, 0.0, 0.0, 0.0, 0.0, 1.0,
+    ]
+}
+
+#[track_caller]
+fn matrix_of(value: &KeyframeValue) -> [f32; 16] {
+    match value {
+        KeyframeValue::Matrix3D(m) => *m,
+        other => panic!("a matrix keyframe, not {other:?}"),
+    }
+}
+
+#[track_caller]
+fn assert_matrix(actual: [f32; 16], expected: [f32; 16], tolerance: f32, what: &str) {
+    for (index, (a, e)) in actual.iter().zip(expected).enumerate() {
+        assert!(
+            (a - e).abs() < tolerance,
+            "{what}: element {index} is {a}, not {e}\nactual:   {actual:?}\nexpected: {expected:?}"
+        );
+    }
+}
+
+/// The angle in degrees, from 0 up to 360, of a turn about x.
+fn angle_about_x(m: [f32; 16]) -> f32 {
+    let degrees = m[6].atan2(m[5]).to_degrees();
+    if degrees < -1e-3 {
+        degrees + 360.0
+    } else {
+        degrees
+    }
+}
+
+/// The progress CSS `cubic-bezier(x1, y1, x2, y2)` gives at time `x`.
+fn bezier(x1: f32, y1: f32, x2: f32, y2: f32, x: f32) -> f32 {
+    let at = |c1: f32, c2: f32, t: f32| {
+        let u = 1.0 - t;
+        3.0 * u * u * t * c1 + 3.0 * u * t * t * c2 + t * t * t
+    };
+    let (mut low, mut high) = (0.0f32, 1.0f32);
+    for _ in 0..64 {
+        let middle = (low + high) / 2.0;
+        if at(x1, x2, middle) < x {
+            low = middle;
+        } else {
+            high = middle;
+        }
+    }
+    at(y1, y2, (low + high) / 2.0)
+}
+
+fn flip() -> Element {
+    let mut presses = use_signal(|| 0u32);
+    let class = if presses() % 2 == 1 { "on" } else { "" };
+    rsx! { div { id: "flip", class: "{class}", onclick: move |_| presses += 1 } }
+}
+
+/// `#flip` declares `transition: transform 1s linear` and a click turns it to
+/// `rotateY(90deg)`. That is one `StartAnimation` of `Transform3D` in slot 0 with two
+/// matrix keyframes, the identity (no transform, carried on from what the box shows) and
+/// the matrix of `rotateY(90deg)`, with no origin of its own: the box is 100 by 50, and its
+/// `Transform3D` modifier turns about the centre, (0.5, 0.5) of it. A quarter turn is less
+/// than half a turn, so nothing is cut.
+#[test]
+fn fr34_2_a_transition_through_a_3d_transform_plays_as_matrix_keyframes() {
+    let mut host = Host::html(flip, through_3d_config);
+    let first = owned(host.rebuild().unwrap());
+    assert!(started(&first).is_empty(), "{first:#?}");
+    let target = clickable(&first);
+
+    let changed = click(&mut host, target);
+    let sent = started(&changed);
+    assert_eq!(sent.len(), 1, "one transition: {changed:#?}");
+    let animation = &sent[0];
+    assert_eq!(animation.node_id, target.0);
+    assert_eq!(animation.property, AnimatedProperty::Transform3D);
+    assert_eq!(animation.slot, 0);
+    assert_eq!(animation.duration_ms, 1000.0);
+    assert_eq!(animation.iterations, 1.0);
+    assert_eq!(animation.fill, FillMode::Backwards);
+    assert_eq!((animation.origin_x, animation.origin_y), (0.0, 0.0));
+    let keyframes = &animation.keyframes;
+    assert_eq!(keyframes.len(), 2, "{keyframes:#?}");
+    assert_eq!(keyframes[0].offset, 0.0);
+    assert!(keyframes[0].from_presented);
+    assert_eq!(keyframes[0].timing, Timing::Linear);
+    assert_matrix(matrix_of(&keyframes[0].value), IDENTITY, 1e-4, "the start");
+    assert_eq!(keyframes[1].offset, 1.0);
+    assert!(!keyframes[1].from_presented);
+    assert_matrix(
+        matrix_of(&keyframes[1].value),
+        rotate_y(90.0),
+        1e-4,
+        "the end",
+    );
+    assert!(
+        has_modifier(&changed, target.0, |modifier| matches!(
+            modifier,
+            Modifier::Transform3D { m, origin_x, origin_y, .. }
+                if (*origin_x - 0.5).abs() < 1e-6
+                    && (*origin_y - 0.5).abs() < 1e-6
+                    && m.iter().zip(rotate_y(90.0)).all(|(a, e)| (a - e).abs() < 1e-4)
+        )),
+        "the box rests on its 3D transform: {changed:#?}"
+    );
+    assert!(
+        !has_modifier(&changed, target.0, |modifier| matches!(
+            modifier,
+            Modifier::Transform { .. }
+        )),
+        "and has no 2D transform beside it: {changed:#?}"
+    );
+}
+
+/// The one animated box of an app, and the animations its first frame starts.
+fn first_frame(
+    app: fn() -> Element,
+) -> (
+    Vec<Mutation<'static>>,
+    Vec<dioxus_compose::schema::Animation<'static>>,
+) {
+    let mut host = Host::html(app, through_3d_config);
+    let first = owned(host.rebuild().unwrap());
+    let sent = started(&first);
+    (first, sent)
+}
+
+fn tilt() -> Element {
+    rsx! { div { id: "tilt" } }
+}
+
+/// `tilt` goes from `rotateX(0deg)` to `rotateX(90deg)`. It is sent as `Transform3D` in the
+/// slot after the transition's, with the identity and the matrix of a quarter turn about x
+/// as its keyframes, and the box carries a `Transform3D` modifier, the identity it rests
+/// at, about its centre.
+#[test]
+fn fr34_2_a_3d_keyframes_animation_plays_as_matrix_keyframes() {
+    let (first, sent) = first_frame(tilt);
+    assert_eq!(sent.len(), 1, "{first:#?}");
+    let animation = &sent[0];
+    assert_eq!(animation.property, AnimatedProperty::Transform3D);
+    assert_eq!(animation.slot, 1);
+    assert_eq!(animation.duration_ms, 1000.0);
+    assert!(animation.iterations.is_infinite());
+    assert_eq!((animation.origin_x, animation.origin_y), (0.0, 0.0));
+    let keyframes = &animation.keyframes;
+    assert_eq!(keyframes.len(), 2, "{keyframes:#?}");
+    assert_eq!((keyframes[0].offset, keyframes[1].offset), (0.0, 1.0));
+    assert!(!keyframes[0].from_presented);
+    assert_eq!(keyframes[0].timing, Timing::Linear);
+    assert_eq!(keyframes[1].timing, Timing::Linear);
+    assert_matrix(matrix_of(&keyframes[0].value), IDENTITY, 1e-4, "from");
+    assert_matrix(matrix_of(&keyframes[1].value), rotate_x(90.0), 1e-4, "to");
+    assert!(
+        has_modifier(&first, animation.node_id, |modifier| matches!(
+            modifier,
+            Modifier::Transform3D { m, origin_x, origin_y, .. }
+                if (*origin_x - 0.5).abs() < 1e-6
+                    && (*origin_y - 0.5).abs() < 1e-6
+                    && m.iter().zip(IDENTITY).all(|(a, e)| (a - e).abs() < 1e-4)
+        )),
+        "the box has a 3D transform to play on: {first:#?}"
+    );
+}
+
+fn tumble() -> Element {
+    rsx! { div { id: "tumble" } }
+}
+
+/// `tumble` turns from `rotateX(0deg)` to `rotateX(360deg)`, linearly. Interpolated as
+/// matrices that is no turn at all, so the segment is cut into three of 120 degrees each,
+/// less than half a turn: keyframes at 0, 1/3, 2/3 and 1, the ones between being
+/// `rotateX(120deg)` and `rotateX(240deg)`, every piece still linear.
+#[test]
+fn fr34_2_a_rotation_of_180_degrees_or_more_is_split() {
+    let (first, sent) = first_frame(tumble);
+    assert_eq!(sent.len(), 1, "{first:#?}");
+    let animation = &sent[0];
+    assert_eq!(animation.property, AnimatedProperty::Transform3D);
+    let keyframes = &animation.keyframes;
+    assert_eq!(keyframes.len(), 4, "{keyframes:#?}");
+    for (index, keyframe) in keyframes.iter().enumerate() {
+        let share = index as f32 / 3.0;
+        assert!(
+            (keyframe.offset - share).abs() < 1e-6,
+            "keyframe {index} is at {}, not {share}",
+            keyframe.offset
+        );
+        assert_eq!(keyframe.timing, Timing::Linear, "keyframe {index}");
+        assert_matrix(
+            matrix_of(&keyframe.value),
+            rotate_x(120.0 * index as f32),
+            1e-4,
+            &format!("keyframe {index}"),
+        );
+    }
+    // Each piece turns 120 degrees, which the renderer's matrix interpolation turns the
+    // same way, because it is less than half a turn.
+    let angles: Vec<f32> = keyframes
+        .iter()
+        .map(|keyframe| angle_about_x(matrix_of(&keyframe.value)))
+        .collect();
+    for pair in angles[..3].windows(2) {
+        assert!((pair[1] - pair[0]).abs() < 180.0, "{angles:?}");
+    }
+}
+
+fn swing() -> Element {
+    rsx! { div { id: "swing" } }
+}
+
+fn stair() -> Element {
+    rsx! { div { id: "stair" } }
+}
+
+/// A cut segment keeps its timing.
+///
+/// - `swing` turns 270 degrees with `ease-in-out`, `cubic-bezier(0.42, 0, 0.58, 1)`. It is
+///   cut in two where the progress is one half, which by the curve's symmetry is at half
+///   the time: keyframes at 0, 0.5 and 1, the middle one `rotateX(135deg)`, and each piece
+///   timed by its half of the curve stretched to the unit square. Sampled at every
+///   twentieth of the time, the progress the two pieces give (the angle of the keyframe a
+///   piece starts at, plus its curve's share of the angle to the next) is the progress of
+///   the whole curve within 1e-3.
+/// - `stair` turns 360 degrees in `steps(4)`. Each step is a keyframe of its own, a quarter
+///   of the time apart and a quarter turn further, held with `steps(1)` (jump-end, so a
+///   step shows its own keyframe until the next one).
+#[test]
+fn fr34_2_a_split_segment_keeps_its_curve() {
+    let (first, sent) = first_frame(swing);
+    assert_eq!(sent.len(), 1, "{first:#?}");
+    let keyframes = &sent[0].keyframes;
+    assert_eq!(keyframes.len(), 3, "{keyframes:#?}");
+    assert_eq!(keyframes[0].offset, 0.0);
+    assert!((keyframes[1].offset - 0.5).abs() < 1e-3, "{keyframes:#?}");
+    assert_eq!(keyframes[2].offset, 1.0);
+    assert_matrix(
+        matrix_of(&keyframes[1].value),
+        rotate_x(135.0),
+        1e-3,
+        "the middle",
+    );
+    let curves: Vec<[f32; 4]> = keyframes[..2]
+        .iter()
+        .map(|keyframe| match keyframe.timing {
+            Timing::CubicBezier { x1, y1, x2, y2 } => [x1, y1, x2, y2],
+            other => panic!("a cubic-bezier piece, not {other:?}"),
+        })
+        .collect();
+    assert_eq!(keyframes[2].timing, Timing::Linear);
+    let progress: Vec<f32> = keyframes
+        .iter()
+        .map(|keyframe| angle_about_x(matrix_of(&keyframe.value)) / 270.0)
+        .collect();
+    assert!(
+        progress[0].abs() < 1e-4 && (progress[2] - 1.0).abs() < 1e-4,
+        "{progress:?}"
+    );
+    for sample in 0..=20 {
+        let time = sample as f32 / 20.0;
+        let piece = if time < keyframes[1].offset { 0 } else { 1 };
+        let (start, end) = (keyframes[piece].offset, keyframes[piece + 1].offset);
+        let [x1, y1, x2, y2] = curves[piece];
+        let local = bezier(x1, y1, x2, y2, (time - start) / (end - start));
+        let pieced = progress[piece] + (progress[piece + 1] - progress[piece]) * local;
+        let whole = bezier(0.42, 0.0, 0.58, 1.0, time);
+        assert!(
+            (pieced - whole).abs() < 1e-3,
+            "at {time}: the pieces give {pieced}, the curve {whole}; {curves:?}, {progress:?}"
+        );
+    }
+
+    let (first, sent) = first_frame(stair);
+    assert_eq!(sent.len(), 1, "{first:#?}");
+    let keyframes = &sent[0].keyframes;
+    assert_eq!(
+        keyframes.len(),
+        5,
+        "one keyframe per step and the end: {keyframes:#?}"
+    );
+    for (index, keyframe) in keyframes.iter().enumerate() {
+        assert_eq!(keyframe.offset, index as f32 / 4.0, "keyframe {index}");
+        let timing = if index < 4 {
+            Timing::Steps {
+                count: 1,
+                position: StepPosition::JumpEnd,
+            }
+        } else {
+            Timing::Linear
+        };
+        assert_eq!(keyframe.timing, timing, "keyframe {index}");
+        assert_matrix(
+            matrix_of(&keyframe.value),
+            rotate_x(90.0 * index as f32),
+            1e-4,
+            &format!("step {index}"),
+        );
+    }
 }

@@ -327,17 +327,34 @@ impl Painter<'_, '_> {
             .playback
             .as_deref()
             .is_some_and(|playback| playback.keeps_transform(id));
-        let animations = match (self.playback.as_deref_mut(), style.as_ref()) {
+        let keep_3d = self
+            .playback
+            .as_deref()
+            .is_some_and(|playback| playback.keeps_transform_3d(id));
+        let mut animations = match (self.playback.as_deref_mut(), style.as_ref()) {
             (Some(playback), Some(style)) => playback.animations(&AnimationRequest {
                 node: id,
-                tag: &tag_of(),
                 width,
                 height,
                 font_px: convert::font_size(style),
                 origin: transform::origin_of(style, width, height),
+                origin_depth: transform::origin_depth(style),
+                backface_hidden: transform::backface_hidden(style),
             }),
             _ => Vec::new(),
         };
+        // A renderer plays a motion through a 3D transform as matrices on the box's 3D
+        // transform, and refuses a 2D transform animation on a box that has one. So once
+        // one motion of `transform` on the box is 3D, the box's transform and every other
+        // motion of it are 3D too.
+        let three_d_motion = keep_3d || animations.iter().any(is_3d_motion);
+        if three_d_motion && let Some(style) = style.as_ref() {
+            let depth = transform::origin_depth(style);
+            let hidden = transform::backface_hidden(style);
+            for animation in &mut animations {
+                lift_motion(animation, depth, hidden);
+            }
+        }
         let rest = |property: AnimatedProperty| {
             animations
                 .iter()
@@ -346,9 +363,17 @@ impl Painter<'_, '_> {
         };
         let moved = match rest(AnimatedProperty::Transform) {
             Some(AnimatedValue::Transform(transform)) => Moved::Matrix(transform),
+            Some(AnimatedValue::Transform3D(transform)) => Moved::ThreeD(transform),
             _ => style.as_ref().map_or(Moved::Nothing, |style| {
                 transform::moved(style, width, height, keep)
             }),
+        };
+        // Whether the box is drawn through a transform as CSS sees it, before a flat or
+        // missing one is carried as 3D: that changes how it is sent, not what it is.
+        let moves = matches!(moved, Moved::Matrix(_) | Moved::ThreeD(_));
+        let moved = match (three_d_motion, style.as_ref()) {
+            (true, Some(style)) => transform::lifted(moved, style, width, height),
+            _ => moved,
         };
         let animated_opacity = match rest(AnimatedProperty::Opacity) {
             Some(AnimatedValue::Opacity(value)) => Some(value),
@@ -425,6 +450,22 @@ impl Painter<'_, '_> {
             )),
             (transform, _) => transform,
         };
+        // The keyframes of a 3D motion are seen through the same perspective as the
+        // transform they replace while they play.
+        if let Some(perspective) = ambient.perspective {
+            for animation in &mut animations {
+                for keyframe in &mut animation.keyframes {
+                    if let AnimatedValue::Transform3D(transform) = &keyframe.value {
+                        keyframe.value = AnimatedValue::Transform3D(transform::under_perspective(
+                            transform.clone(),
+                            &perspective,
+                            rect.x,
+                            rect.y,
+                        ));
+                    }
+                }
+            }
+        }
 
         let own_opacity = animated_opacity
             .unwrap_or_else(|| style.as_ref().map_or(1.0, |style| style.clone_opacity()));
@@ -440,7 +481,7 @@ impl Painter<'_, '_> {
         // the rest also do in CSS; this display list does not carry them.)
         let context = match (positioned, z_index) {
             (true, Some(z)) => Some(z),
-            _ if own_opacity < 1.0 || transform.is_some() || transform_3d.is_some() => Some(0),
+            _ if own_opacity < 1.0 || moves => Some(0),
             _ => None,
         };
         let opacity = ambient.opacity * own_opacity;
@@ -1264,6 +1305,28 @@ struct Layers {
     normal: Vec<NodeId>,
     positioned: Vec<NodeId>,
     positive: Vec<(i32, NodeId)>,
+}
+
+/// Whether the animation is a motion of `transform` with a 3D keyframe.
+fn is_3d_motion(animation: &Animation) -> bool {
+    animation.property == AnimatedProperty::Transform
+        && animation
+            .keyframes
+            .iter()
+            .any(|keyframe| matches!(keyframe.value, AnimatedValue::Transform3D(_)))
+}
+
+/// Turns the 2D keyframes of a motion of `transform` into the 3D transforms they are.
+fn lift_motion(animation: &mut Animation, depth: f32, backface_hidden: bool) {
+    if animation.property != AnimatedProperty::Transform {
+        return;
+    }
+    for keyframe in &mut animation.keyframes {
+        if let AnimatedValue::Transform(flat) = &keyframe.value {
+            keyframe.value =
+                AnimatedValue::Transform3D(Transform3D::from_2d(flat, depth, backface_hidden));
+        }
+    }
 }
 
 /// The value of its property that a running animation starts from: the first keyframe, or
